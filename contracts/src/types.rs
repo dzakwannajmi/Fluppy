@@ -9,9 +9,16 @@ pub struct PaymentConfig {
 }
 
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)] // Tambahkan derive ini agar aman
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZKProof {
     pub root: BytesN<32>,      
     pub proof: Vec<BytesN<32>>,
     pub leaf: BytesN<32>,      
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataKey {
+    Admin,
+    IsPaused,
 }

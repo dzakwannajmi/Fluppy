@@ -4,15 +4,22 @@ This is the frontend repository for the Fluppy Protocol, a web-based interface t
 
 ## 🚀 Key Features
 
+- **Privacy-First (ZKP)**: Real-time Merkle Proof generation using SHA256 (Crypto-JS) on the client side. Validates membership without exposing raw data.
 - **Freighter Integration**: Secure non-custodial wallet connection for signing Soroban transactions.
-- **On-the-fly ZKP Generation**: Real-time Merkle Proof generation on the client side using SHA256 (Crypto-JS).
 - **Atomic Transaction Handling**: Wraps payment configuration and membership proofs into a single contract invocation.
-- **Real-time Polling**: Transaction status tracking system from PENDING to SUCCESS using Soroban RPC.
+- **Circuit Breaker Aware**: Built-in protocol pause/unpause functionality for emergency security management.
+- **Real-time Polling**: Advanced transaction tracking system that monitors status from `PENDING` to `SUCCESS`.
 
 ## 🛠️ Tech Stack
 
+### Smart Contract
+- **Language**: Rust
+- **Framework**: Soroban SDK
+- **Testing**: Cargo Test
+
+### Frontend Client
 - **Framework**: Next.js 14 (App Router)
-- **Styling**: Tailwind CSS
+- **Styling**: Tailwind CSS (Fluppy Pink Theme)
 - **Blockchain SDK**: @stellar/stellar-sdk
 - **Cryptography**: MerkleTreeJS & Crypto-JS
 - **Wallet**: @stellar/freighter-api
@@ -30,15 +37,15 @@ NEXT_PUBLIC_DEV_OPS_WALLET=DEV_OPS_WALLET
 
 ````
 
-## 🏗️ Folder Structure
+## 🚦 Getting Started
+## Smart Contract
 
-- `app/page.tsx`: Main logic for ZKP integration and UI Dashboard.
-- `app/globals.css`: Configuration for "Fluppy" theme and color variables.
-- `public/`: Static assets and icons.
+```bash
+cd contracts
+cargo build --target wasm32v1-none --release
+```
 
-## 🚦 Running in Development
-
-
+## Frontend
 ```bash
 npm install
 npm run dev
@@ -48,4 +55,4 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 
 ## 🔒 Security Notes
 
-This frontend never stores user NIM (Student ID) in plain text. All hashing processes are performed locally in the browser before proofs are sent to the Stellar network, ensuring user privacy is preserved from the source.
+This protocol adheres to strict privacy standards. The frontend never stores or transmits user identifiers (like NIM) in plain text. All hashing processes are performed locally in the browser before proofs are sent to the Stellar network, ensuring user privacy is preserved from the source.

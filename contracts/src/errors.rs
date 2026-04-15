@@ -6,6 +6,8 @@ use soroban_sdk::contracterror;
 pub enum FluppyError {
     UnauthorizedMember = 1,
     InsufficientBalance = 2,
-    InvalidPaymentAmount = 3,
-    Overflow = 4,
+    ContractPaused = 3,
+    NotAdmin = 4,
+    InvalidPaymentAmount = 5,
+    Overflow = 6,
 }
