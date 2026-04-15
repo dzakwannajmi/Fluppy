@@ -1,37 +1,59 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env, token};
+mod types;
+mod errors;
+mod payment;
+mod verify;
+
+use soroban_sdk::{contract, contractimpl, contractevent, Address, Env, token};
+use types::*;
+use errors::FluppyError;
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayZkEvent {
+    pub from: Address,
+    pub to: Address,
+    pub amount: i128,
+}
 
 #[contract]
-pub struct FluppyEscrow;
+pub struct FluppyZkContract;
 
 #[contractimpl]
-impl FluppyEscrow {
-    /// Fungsi untuk membayar booking dan membagi dana secara otomatis
-    pub fn pay_and_split(
+impl FluppyZkContract {
+    
+    pub fn pay_with_zk(
         env: Env,
-        token_address: Address, // Alamat smart contract aset (misal: USDC atau XLM)
-        guest: Address,         // Alamat wallet tamu yang membayar
-        owner: Address,         // Alamat wallet pemilik hotel (95%)
-        ops: Address,           // Alamat wallet operasional Fluppy (5%)
-        amount: i128,           // Total harga booking
-    ) {
-        // 1. Verifikasi Keamanan: Pastikan tamu benar-benar menyetujui transaksi ini
-        guest.require_auth();
+        config: PaymentConfig,
+        from: Address,
+        to: Address,
+        amount: i128,
+        zk_proof: ZKProof
+    ) -> Result<(), FluppyError> {
+        
+        // 1. Validasi ZK Proof (Merkle Membership)
+        if !verify::verify_membership(&env, zk_proof.root, zk_proof.proof, zk_proof.leaf) {
+            return Err(FluppyError::UnauthorizedMember);
+        }
 
-        // 2. Logika Matematika Split Payment
-        // Soroban tidak mendukung angka desimal (float), jadi kita pakai perkalian integer
-        let ops_fee = (amount * 5) / 100;      // 5% untuk operasional
-        let owner_share = amount - ops_fee;    // Sisanya (95%) untuk owner hotel
+        // 2. Kalkulasi Split
+        let (owner_amt, dev_amt) = payment::calculate_split(amount, config.fee_percentage);
 
-        // 3. Inisialisasi Klien Token
-        // Ini ibarat kita memanggil "Bank" (USDC/XLM) untuk memproses transfer
-        let token_client = token::Client::new(&env, &token_address);
+        // 3. Eksekusi Transfer
+        from.require_auth();
 
-        // 4. Eksekusi Transfer
-        // Transfer 95% dari tamu ke pemilik hotel
-        token_client.transfer(&guest, &owner, &owner_share);
+        let client = token::TokenClient::new(&env, &config.usdc_token);
+        client.transfer(&from, &to, &owner_amt);
+        client.transfer(&from, &config.dev_ops, &dev_amt);
 
-        // Transfer 5% dari tamu ke operasional Fluppy
-        token_client.transfer(&guest, &ops, &ops_fee);
+        // [MODERN FIX] Cara panggil event yang bener di v25:
+        // Panggil langsung dari Struct-nya!
+        PayZkEvent {
+            from: from.clone(),
+            to,
+            amount,
+        }.publish(&env); // <--- Jauh lebih bersih & modern
+        
+        Ok(())
     }
 }
