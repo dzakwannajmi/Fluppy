@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+```md
+# Fluppy Frontend Client 🖥️
 
-## Getting Started
+This is the frontend repository for the Fluppy Protocol, a web-based interface that allows users to perform privacy-preserving payments using Zero-Knowledge Proofs on the Stellar network.
 
-First, run the development server:
+## 🚀 Key Features
+
+- **Freighter Integration**: Secure non-custodial wallet connection for signing Soroban transactions.
+- **On-the-fly ZKP Generation**: Real-time Merkle Proof generation on the client side using SHA256 (Crypto-JS).
+- **Atomic Transaction Handling**: Wraps payment configuration and membership proofs into a single contract invocation.
+- **Real-time Polling**: Transaction status tracking system from PENDING to SUCCESS using Soroban RPC.
+
+## 🛠️ Tech Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Styling**: Tailwind CSS
+- **Blockchain SDK**: @stellar/stellar-sdk
+- **Cryptography**: MerkleTreeJS & Crypto-JS
+- **Wallet**: @stellar/freighter-api
+
+## ⚙️ Environment Configuration
+
+Make sure you have a `.env.local` file in this folder with the following variables:
+
+```
+NEXT_PUBLIC_CONTRACT_ID=PUBLIC_CONTRACT_ID
+NEXT_PUBLIC_RPC_URL=[https://soroban-testnet.stellar.org:443](https://soroban-testnet.stellar.org:443)
+NEXT_PUBLIC_HORIZON_URL=[https://horizon-testnet.stellar.org](https://horizon-testnet.stellar.org)
+NEXT_PUBLIC_USDC_CONTRACT_ID=USDC_CONTRACT_ID
+NEXT_PUBLIC_DEV_OPS_WALLET=DEV_OPS_WALLET
+
+````
+
+## 🏗️ Folder Structure
+
+- `app/page.tsx`: Main logic for ZKP integration and UI Dashboard.
+- `app/globals.css`: Configuration for "Fluppy" theme and color variables.
+- `public/`: Static assets and icons.
+
+## 🚦 Running in Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+````
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the application.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🔒 Security Notes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This frontend never stores user NIM (Student ID) in plain text. All hashing processes are performed locally in the browser before proofs are sent to the Stellar network, ensuring user privacy is preserved from the source.
