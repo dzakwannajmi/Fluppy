@@ -158,7 +158,7 @@ cargo build --target wasm32v1-none --release
 ```bash
 stellar contract deploy \
   --wasm target/wasm32v1-none/release/fluppy.wasm \
-  --source puppy \
+  --source anymous \
   --network testnet
 ```
 
@@ -185,17 +185,6 @@ Fluppy aims to become a **privacy-first payment infrastructure** for real-world 
 
 ---
 
-## 👨‍💻 Author
-
-**Muhammad Dzakwan Najmi**
-Google Student Ambassador
-Universitas Islam Kalimantan MAB
-
----
-
 ## 📜 License
-
 This project is open-source and available under the MIT License.
 
-```
-```
