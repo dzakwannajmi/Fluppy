@@ -39,10 +39,11 @@ NEXT_PUBLIC_DEV_OPS_WALLET=DEV_OPS_WALLET
 
 ## 🚦 Running in Development
 
+
 ```bash
 npm install
 npm run dev
-````
+```
 
 Open [http://localhost:3000](http://localhost:3000) to view the application.
 
