@@ -1,4 +1,3 @@
-```md
 # Fluppy Frontend Client 🖥️
 
 This is the frontend repository for the Fluppy Protocol, a web-based interface that allows users to perform privacy-preserving payments using Zero-Knowledge Proofs on the Stellar network.
