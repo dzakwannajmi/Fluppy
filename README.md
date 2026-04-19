@@ -1,189 +1,102 @@
-# Fluppy
+-----
 
-Fluppy is a decentralized payment protocol built on the Stellar Soroban ecosystem.  
-It enables **automatic split payments without intermediaries**, while preserving user privacy using **Zero-Knowledge Proof (ZKP)-inspired mechanisms**.
+# 🚀 Fluppy: Privacy-Preserving Payment Protocol
 
----
+Fluppy is a decentralized, non-custodial payment gateway built on **Stellar Soroban**. It empowers merchants to accept payments with **automated fee splitting** while protecting user privacy through **Zero-Knowledge (ZK) Membership Verification**.
 
-## 💡 Problem & Solution
+> **⚠️ SCF Grant Candidate:** This repository is part of the Stellar Community Fund (SCF) submission. All code is open-source, non-custodial, and designed for auditability.
 
-### ❌ Problem
+-----
 
-In traditional group payments or membership-based discounts, users are often required to expose sensitive identity information (such as student IDs or membership numbers) to centralized systems or even directly on-chain.
+## 🌟 Key Innovations
 
-This creates serious privacy risks:
-- Identity data can be permanently linked to wallet addresses
-- Sensitive information may be exposed to internal systems or third parties
-- No privacy guarantees in public ledgers
+### 1\. Zero-Knowledge Membership Proofs
 
----
+Fluppy uses **Merkle Tree-based ZK verification** to allow users to prove membership in a specific group (e.g., student discounts, loyalty programs) without ever exposing their raw identity on the public ledger.
 
-### ✅ Solution
+### 2\. Atomic Split Settlements (95/5)
 
-Fluppy introduces a **Zero-Knowledge Membership Verification layer** using:
+Unlike traditional systems that require manual billing, Fluppy executes an **atomic bifurcation** of funds. 95% is instantly routed to the Merchant, while a 5% protocol fee is sent to the Treasury in a single, irreversible transaction.
 
-- Merkle Trees  
-- SHA256 hashing  
+### 3\. Audit-Ready Log Transparency
 
-Users can prove they belong to a valid group (e.g., university students) **without revealing their actual identity (e.g., student ID)**.
+To comply with financial auditing standards, every transaction emits an **enhanced event** containing:
 
----
+  - `total_amount` (Gross payment)
+  - `merchant_receive` (Net settlement)
+  - `protocol_fee` (Calculated revenue)
+  - `timestamp` (Ledger-verified time)
 
-## 🛠 Technical Architecture
+-----
 
-Fluppy uses a hybrid architecture to ensure efficiency and privacy:
+## 🛠 Developer Experience (DX) & Audit Tooling
 
-### 🔹 Off-Chain Layer
-- User identities are hashed into a **Merkle Tree**
-- A **Merkle Proof** is generated as a cryptographic membership proof
+We provide a **Global Makefile** to ensure the project is easy to build, test, and audit by the SCF community and technical reviewers.
 
-### 🔹 On-Chain Layer (Soroban)
-- The smart contract stores only a **32-byte Merkle Root**
-- No raw identity data is stored on-chain
-- Reduces storage costs and enhances privacy
+| Command | Action |
+| :--- | :--- |
+| `make setup` | Installs frontend dependencies and configures Rust toolchain. |
+| `make test` | Executes the 4/4 passing unit tests for ZK and financial logic. |
+| `make build` | Compiles the smart contract into an optimized WASM binary. |
+| `make fmt` | Formats all Rust code to industry standards. |
 
-### ⚡ Execution Flow
-- The contract verifies proofs in **O(log n)**
-- If valid:
-  - Payment is processed
-  - Funds are split automatically
-- All executed in a single **atomic transaction**
+-----
 
----
+## ⚙️ Technical Architecture
 
-## ⚙️ Features
+### 🔹 Off-Chain (Privacy Layer)
 
-- ✅ Trustless split payments (95% receiver, 5% protocol)
-- ✅ Privacy-preserving membership verification
-- ✅ No sensitive data stored on-chain
-- ✅ Atomic execution via Soroban smart contracts
-- ✅ Open-source and reusable infrastructure
+  - **Merkle Tree Generation**: Identity hashes are organized into a tree.
+  - **Proof Generation**: Users generate a 32-byte cryptographic proof locally.
 
----
+### 🔹 On-Chain (Soroban Logic)
 
-## 📈 Development Milestones
+  - **Root Validation**: The contract only stores the **32-byte Merkle Root**, making it impossible to link wallet addresses to real identities.
+  - **SAC Integration**: Fully compatible with **Stellar Asset Contracts (USDC)**.
 
-### 🧱 Phase 1: Core Smart Contract
-- Implemented split-payment logic in Rust
-- Automatic fund distribution (95% receiver / 5% DevOps)
-- Custom error handling:
-  - `UnauthorizedMember`
-  - `InsufficientBalance`
+-----
 
----
+## 🚀 Live Verification (Testnet)
 
-### 🔐 Phase 2: ZKP Integration (Merkle-based)
-- Implemented Merkle Tree verification using SHA256
-- Synced hashing between:
-  - Frontend (Crypto-JS)
-  - Smart Contract (`env.crypto`)
-- Ensured full cryptographic consistency
+You can verify the protocol's functionality on the Stellar Testnet:
 
----
+  - **Contract ID**: `CDDVG5GDT7E4HSGKSYFXRSAWEGINCAMOX33THIBVXYUH3R7UE2ET7XY6B`
+  - **Successful Tx Proof**: [`8d0be2893ffba4ad7f3...`](https://www.google.com/search?q=%5Bhttps://stellar.expert/explorer/testnet/tx/8d0be2893ffba4ad7f317819b13c69a1bf177e958de8d72d323e5157c62c5657%5D\(https://stellar.expert/explorer/testnet/tx/8d0be2893ffba4ad7f317819b13c69a1bf177e958de8d72d323e5157c62c5657\))
+      - *Click the **Events** tab on Stellar Expert to see the detailed audit logs.*
 
-### 🌐 Phase 3: Frontend & Wallet Integration
-- Built responsive UI using **Next.js 14 + Tailwind CSS**
-- Integrated **Freighter Wallet** for secure transaction signing
-- Implemented real-time transaction polling via Soroban RPC
+-----
 
----
+## 📦 Getting Started
 
-### 🛡 Phase 4: Security Testing
-- Conducted positive & negative tests
-- Validated resistance against unauthorized access
-- Ensured protocol robustness
-
----
-
-## 🧪 Technical Test Results
-
-### 1. 🔍 Soundness Test (Negative Case)
-
-**Scenario:** Invalid identity claim (non-whitelisted user)
-
-- Input: Unauthorized membership (fake ID)
-- Result: Execution halted with `Error(Contract, #1)`
-
-✅ **Conclusion:**  
-The protocol correctly rejects unauthorized users.
-
----
-
-### 2. 🔐 Privacy Test
-
-- No raw identity data is visible on-chain
-- Only:
-  - Merkle Leaf
-  - Proof
-  - Root (hashed data)
-
-✅ **Conclusion:**  
-User identity remains fully private and unlinkable.
-
----
-
-## 🚀 Getting Started
-
-### 📦 Prerequisites
-
-- Rust & Cargo (v1.84+)
-- Stellar CLI
-- Node.js & npm
-
----
-
-### 📥 Installation
+### 1\. Installation
 
 ```bash
-git clone https://github.com/m-dzakwan/fluppy.git
+git clone https://github.com/dzakwannajmi/Fluppy.git
 cd fluppy
-npm install
-````
-
----
-
-### 🦀 Build Smart Contract
-
-```bash
-cd contracts
-
-RUSTFLAGS="-C target-feature=-reference-types,-multi-value" \
-cargo build --target wasm32v1-none --release
+make setup
 ```
 
----
-
-### 🚀 Deploy Contract
+### 2\. Verification & Deployment
 
 ```bash
-stellar contract deploy \
-  --wasm target/wasm32v1-none/release/fluppy.wasm \
-  --source anymous \
-  --network testnet
+# Run unit tests to verify ZK logic
+make test
+
+# Build and Deploy to Testnet (requires stellar-cli)
+make deploy
 ```
 
----
+-----
 
 ## 🧩 Tech Stack
 
-* **Smart Contract:** Rust (Soroban)
-* **Frontend:** React (Next.js / TSX)
-* **Backend:** Node.js + PostgreSQL
-* **Cryptography:** SHA256, Merkle Trees
-* **Wallet:** Freighter
-
----
-
-## 🌍 Vision
-
-Fluppy aims to become a **privacy-first payment infrastructure** for real-world applications:
-
-* Hospitality (hotel payments)
-* Membership-based services
-* Group payments
-* Loyalty systems
-
----
+  - **Smart Contracts**: Rust (Soroban SDK)
+  - **Frontend**: Next.js 14, Tailwind CSS, Freighter Wallet
+  - **Tooling**: Stellar CLI, Makefile
+  - **Privacy**: SHA-256 Merkle Proofs
 
 ## 📜 License
-This project is open-source and available under the MIT License.
+
+Fluppy is released under the **MIT License**. We believe in open-source infrastructure for the global financial ecosystem.
+
+-----

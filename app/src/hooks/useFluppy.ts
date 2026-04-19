@@ -91,11 +91,9 @@ export const useFluppy = () => {
 
             if ((res.status as string) === "ERROR") throw new Error("RPC Error");
 
-            // Simpan Hash untuk tracking
             setTxHash(res.hash);
 
-            // STEP 5: Transaction Polling (Krusial!)
-            // Kita menunggu sampai transaksi benar-benar masuk ke Ledger
+            // STEP 5: Transaction Polling
             toast.loading("Verifying transaction on-chain...", { id: "tx-poll" });
             const finalResult = await pollTransaction(res.hash);
 
@@ -108,12 +106,12 @@ export const useFluppy = () => {
         } catch (err: any) {
             const friendlyMessage = parseContractError(err);
             toast.error(friendlyMessage, {
-                id: "tx-poll", // Menimpa loading toast jika ada
+                id: "tx-poll",
                 duration: 6000,
                 position: 'top-center',
             });
         } finally {
-            // Pastikan loading dimatikan apapun hasilnya
+        
             setLoading(false);
         }
     };
