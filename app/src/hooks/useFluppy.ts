@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { requestAccess, signTransaction } from "@stellar/freighter-api";
 import { TransactionBuilder, Contract, nativeToScVal, Address, xdr } from "@stellar/stellar-sdk";
 import { generateZKP } from "../lib/zkp";
+import { parseContractError } from '../lib/errorMapper';
+import { toast } from 'react-hot-toast';
 import {
     rpcServer,
     pollTransaction,
@@ -22,35 +24,25 @@ export const useFluppy = () => {
     const [loading, setLoading] = useState(false);
     const [txHash, setTxHash] = useState<string | null>(null);
 
-    // Establishes a connection with the Freighter Wallet
     const connectWallet = async () => {
         try {
             const access = await requestAccess();
             if (access.address) setWalletAddress(access.address);
         } catch (e) {
-            console.error("Connection failed", e);
+            toast.error("Freighter connection failed.");
         }
     };
 
-    /**
-     * executePayment
-     * * Core logic for the privacy-preserving payment flow:
-     * 1. Generates a Merkle Proof (ZKP) locally to protect user identity.
-     * 2. Serializes complex data types into Stellar-compliant XDR formats.
-     * 3. Invokes the 'pay_with_zk' function on the smart contract for atomic settlement.
-     */
     const executePayment = async (amount: string, hotelWallet: string) => {
         if (!walletAddress) return;
         setLoading(true);
+        setTxHash(null); // Reset hash sebelumnya
+
         try {
             // STEP 1: Local ZKP Generation
-            // We generate the leaf and proof path locally. The actual secret remains on the 
-            // user's device, fulfilling the "Zero-Knowledge" privacy requirement.
             const { leaf, proof, root } = generateZKP("2410010454");
 
             // STEP 2: XDR Serialization
-            // Mapping JavaScript objects to Soroban-compatible ScVal (Smart Contract Values).
-            // We manually map the proof vector to ensure strict type compliance.
             const zkProofScVal = xdr.ScVal.scvMap([
                 new xdr.ScMapEntry({
                     key: xdr.ScVal.scvSymbol("leaf"),
@@ -70,28 +62,24 @@ export const useFluppy = () => {
 
             const account = await rpcServer.getAccount(walletAddress);
             const contract = new Contract(CONTRACT_ID);
-
-            // Convert decimal amount to integer (i128) using Stellar's 7-decimal precision
             const rawAmount = BigInt(Math.floor(parseFloat(amount) * 10000000));
 
             // STEP 3: Transaction Building
-            // We invoke 'pay_with_zk' which handles the 95/5 split automatically on-chain.
             const tx = new TransactionBuilder(account, {
                 fee: "10000",
                 networkPassphrase: NETWORK_PASSPHRASE
             })
                 .addOperation(contract.call(
                     "pay_with_zk",
-                    new Address(walletAddress).toScVal(), // Payer address
-                    new Address(hotelWallet).toScVal(),   // Recipient (Merchant) address
-                    nativeToScVal(rawAmount, { type: "i128" }), // Total amount to split
-                    zkProofScVal // Cryptographic membership proof
+                    new Address(walletAddress).toScVal(),
+                    new Address(hotelWallet).toScVal(),
+                    nativeToScVal(rawAmount, { type: "i128" }),
+                    zkProofScVal
                 ))
                 .setTimeout(30)
                 .build();
 
             // STEP 4: Signing & Submission
-            // The transaction is signed locally via Freighter, maintaining a non-custodial flow.
             const prepared = await rpcServer.prepareTransaction(tx);
             const signed = await signTransaction(prepared.toXDR(), { networkPassphrase: NETWORK_PASSPHRASE });
 
@@ -103,15 +91,29 @@ export const useFluppy = () => {
 
             if ((res.status as string) === "ERROR") throw new Error("RPC Error");
 
-            // STEP 5: Transaction Polling
-            // Waiting for ledger finality to ensure the payment is settled.
-            await pollTransaction(res.hash);
+            // Simpan Hash untuk tracking
             setTxHash(res.hash);
-            alert("Payment Successful & Private!");
+
+            // STEP 5: Transaction Polling (Krusial!)
+            // Kita menunggu sampai transaksi benar-benar masuk ke Ledger
+            toast.loading("Verifying transaction on-chain...", { id: "tx-poll" });
+            const finalResult = await pollTransaction(res.hash);
+
+            if (finalResult?.status === "SUCCESS") {
+                toast.success("Payment Successful! 95/5 Split Executed.", { id: "tx-poll" });
+            } else {
+                throw new Error("Transaction Failed on Chain");
+            }
+
         } catch (err: any) {
-            console.error(err);
-            alert(`Payment Failed: ${err.message}`);
+            const friendlyMessage = parseContractError(err);
+            toast.error(friendlyMessage, {
+                id: "tx-poll", // Menimpa loading toast jika ada
+                duration: 6000,
+                position: 'top-center',
+            });
         } finally {
+            // Pastikan loading dimatikan apapun hasilnya
             setLoading(false);
         }
     };

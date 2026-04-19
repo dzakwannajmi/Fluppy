@@ -1,7 +1,3 @@
-Ini adalah draf **README.md** untuk folder `app` (frontend) yang telah diperbarui dengan standar teknis tinggi. [cite_start]Dokumentasi ini secara eksplisit menjelaskan arsitektur keamanan kamu di mana parameter finansial disimpan secara *on-chain* untuk mencegah manipulasi[cite: 19].
-
------
-
 # 💻 Fluppy Client Interface (Application Layer)
 
 [cite_start]This directory contains the high-performance web dashboard for the **Fluppy Protocol**, a **Layer 3 application layer** solution built on the **Stellar Testnet**[cite: 7]. [cite_start]The interface serves as a non-custodial gateway, allowing users to interact with Soroban smart contracts through the **Freighter** wallet[cite: 14].

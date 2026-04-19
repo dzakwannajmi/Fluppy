@@ -4,6 +4,9 @@ mod payment;
 mod types;
 mod verify;
 
+#[cfg(test)]
+mod test;
+
 use errors::FluppyError;
 use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
 pub use types::*;
