@@ -187,4 +187,3 @@ Fluppy aims to become a **privacy-first payment infrastructure** for real-world 
 
 ## 📜 License
 This project is open-source and available under the MIT License.
-

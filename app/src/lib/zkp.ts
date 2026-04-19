@@ -45,11 +45,11 @@ export const getMerkleRoot = () => tree.getHexRoot().replace('0x', '');
 export const generateZKP = (nim: string) => {
   const leaf = sha256(Buffer.from(nim));
   const proof = tree.getProof(leaf);
-  
+
   // Return the Leaf, the Path (Proof), and the Root to be verified by the contract.
-  return { 
-    leaf, 
-    proof: proof.map(p => p.data), 
-    root: Buffer.from(getMerkleRoot(), 'hex') 
+  return {
+    leaf,
+    proof: proof.map(p => p.data),
+    root: Buffer.from(getMerkleRoot(), 'hex')
   };
 };
