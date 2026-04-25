@@ -1,6 +1,6 @@
 -----
 
-# 🚀 Fluppy: Privacy-Preserving Payment Protocol
+# 🚀 Fluppy
 
 Fluppy is a decentralized, non-custodial payment gateway built on **Stellar Soroban**. It empowers merchants to accept payments with **automated fee splitting** while protecting user privacy through **Zero-Knowledge (ZK) Membership Verification**.
 

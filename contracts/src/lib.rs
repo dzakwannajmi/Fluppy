@@ -2,19 +2,24 @@
 mod errors;
 mod payment;
 mod types;
-mod verify;
+mod verify; // ⬅️ Modul Groth16 BN254 baru kita
 
 #[cfg(test)]
 mod test;
 
-// Added 'Symbol' to imports to resolve the resolution error
 use errors::FluppyError;
-use soroban_sdk::{contract, contractevent, contractimpl, token, Address, Env};
-pub use types::*;
+use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
+use types::*;
+use verify::{verify_groth16_proof};
 
-/// Enhanced Event for transparency.
-/// Including fee_amount and timestamp allows external indexers to track
-/// protocol revenue and transaction timing without complex ledger re-calculations.
+// ================== PROTOCOL 25 ZK VERIFICATION ==================
+// verify_groth16_proof(
+//     &env, pi_a, pi_b, pi_c,
+//     nullifier.clone(), merkle_root.clone(), merkle_root,
+//     recipient_hash, min_amount, max_amount
+// ).map_err(|_| FluppyError::UnauthorizedMember)?;
+
+// ====================== EVENTS ======================
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PayZkEvent {
@@ -32,51 +37,106 @@ pub struct PauseStatusEvent {
     pub is_paused: bool,
 }
 
+// ====================== CONTRACT ======================
 #[contract]
 pub struct FluppyZkContract;
 
 #[contractimpl]
 impl FluppyZkContract {
-    /// Executes a private, ZK-verified payment with automatic 95/5 fee splitting.
+    /// Initialize contract (One-Time Initialization + Panic Guard)
+    pub fn initialize(
+        env: Env, 
+        admin: Address, 
+        usdc: Address, 
+        dev_wallet: Address,
+        merkle_root: BytesN<32> // ⬅️ Tambahan: Root awal untuk verifikasi identitas
+    ) {
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic!("Contract already initialized"); // Immutable setelah deploy
+        }
+
+        let config = PaymentConfig {
+            usdc_token: usdc,
+            dev_ops: dev_wallet,
+            fee_percentage: 500, // 5% = 500 basis points
+        };
+
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Config, &config);
+        env.storage().instance().set(&DataKey::MerkleRoot, &merkle_root);
+        env.storage().instance().set(&DataKey::IsPaused, &false);
+    }
+
+/// Executes a private, ZK-verified payment with automatic 95/5 fee splitting
     pub fn pay_with_zk(
         env: Env,
         from: Address,
         to: Address,
         amount: i128,
-        zk_proof: ZKProof,
+        pi_a: BytesN<64>,
+        pi_b: BytesN<128>,
+        pi_c: BytesN<64>,
+        nullifier: BytesN<32>,
+        merkle_root: BytesN<32>,
+        recipient_hash: BytesN<32>,
+        min_amount: BytesN<32>,
+        max_amount: BytesN<32>,
     ) -> Result<(), FluppyError> {
         check_if_paused(&env)?;
 
-        // Fetch protocol configuration
-        let config: PaymentConfig = env.storage().instance().get(&DataKey::Config).unwrap();
+        let config: PaymentConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .unwrap_or_else(|| panic!("Contract not initialized"));
 
-        // 1. ZKP Membership Verification
-        // Validates that the user is part of the authorized Merkle Root.
-        if !verify::verify_membership(&env, zk_proof.root, zk_proof.proof, zk_proof.leaf) {
-            return Err(FluppyError::UnauthorizedMember);
+        // ================== SECURITY: ROOT & NULLIFIER GUARD ==================
+        let stored_root: BytesN<32> = env.storage().instance().get(&DataKey::MerkleRoot).unwrap();
+        if merkle_root != stored_root {
+            panic!("Invalid Merkle Root");
         }
 
-        // 2. Financial Logic Consolidation
-        // We calculate the split once to save gas and ensure consistency.
-        // merchant_amt = 95%, treasury_amt = 5%
+        if env.storage().persistent().has(&DataKey::Nullifier(nullifier.clone())) {
+            panic!("Nullifier already spent!"); 
+        }
+
+        // ================== PROTOCOL 25 ZK VERIFICATION ==================
+        // Nah, pemanggilan verify_groth16_proof harus ada di SINI (di dalam pay_with_zk)
+        verify_groth16_proof(
+            &env, 
+            pi_a, 
+            pi_b, 
+            pi_c,
+            nullifier.clone(), 
+            merkle_root.clone(), 
+            merkle_root, // verified_root disamakan dengan merkle_root
+            recipient_hash, 
+            min_amount, 
+            max_amount
+        ).map_err(|_| FluppyError::UnauthorizedMember)?;
+
+        // Tandai Nullifier sebagai terpakai
+        env.storage().persistent().set(&DataKey::Nullifier(nullifier.clone()), &true);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Nullifier(nullifier),
+            518400,
+            5184000,
+        );
+
+        // ================== FINANCIAL LOGIC (95/5 SPLIT) ==================
         let (merchant_amt, treasury_amt) = payment::calculate_split(amount, config.fee_percentage);
         let current_timestamp = env.ledger().timestamp();
 
-        // 3. Secure Asset Transfer
-        // Funds move directly from the payer to destinations via the Stellar Asset Contract.
         from.require_auth();
         let client = token::TokenClient::new(&env, &config.usdc_token);
 
-        // Atomic settlement: Transfer to merchant and treasury in a single transaction.
         client.transfer(&from, &to, &merchant_amt);
         client.transfer(&from, &config.dev_ops, &treasury_amt);
 
-        // 4. Audit-Friendly Event Emission
-        // We emit a single, comprehensive event. This is more gas-efficient than multiple events
-        // and provides a complete data point for indexers (Stellar Expert, etc.)
+        // ================== EVENT EMISSION ==================
         PayZkEvent {
-            from,
-            merchant: to,
+            from: from.clone(),
+            merchant: to.clone(),
             total_amount: amount,
             merchant_receive: merchant_amt,
             protocol_fee: treasury_amt,
@@ -85,23 +145,10 @@ impl FluppyZkContract {
         .publish(&env);
 
         Ok(())
-    }
+    }   
 
-    pub fn initialize(env: Env, admin: Address, usdc: Address, dev_wallet: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic!("Contract already initialized");
-        }
-
-        let config = PaymentConfig {
-            usdc_token: usdc,
-            dev_ops: dev_wallet,
-            fee_percentage: 500, // 500 Basis Points = 5%
-        };
-
-        env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::Config, &config);
-        env.storage().instance().set(&DataKey::IsPaused, &false);
-    }
+    // ================== ADMIN FUNCTIONS ==================
+    // Fungsi set_ultrahonk_verifier DIHAPUS karena kita menggunakan native function
 
     pub fn set_pause(env: Env, admin: Address, paused: bool) -> Result<(), FluppyError> {
         admin.require_auth();
@@ -117,20 +164,13 @@ impl FluppyZkContract {
     }
 
     pub fn is_paused(env: Env) -> bool {
-        env.storage()
-            .instance()
-            .get(&DataKey::IsPaused)
-            .unwrap_or(false)
+        env.storage().instance().get(&DataKey::IsPaused).unwrap_or(false)
     }
 }
 
+// ====================== HELPER ======================
 fn check_if_paused(env: &Env) -> Result<(), FluppyError> {
-    if env
-        .storage()
-        .instance()
-        .get(&DataKey::IsPaused)
-        .unwrap_or(false)
-    {
+    if env.storage().instance().get(&DataKey::IsPaused).unwrap_or(false) {
         return Err(FluppyError::ContractPaused);
     }
     Ok(())

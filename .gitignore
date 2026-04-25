@@ -1,13 +1,23 @@
-# Rust's output directory
-target
+# ─── DATABASE & SECRETS (CRITICAL) ────────────────────────────────────────────
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.stellar/
+.soroban/
 
-# Local settings
-.soroban
-.stellar
+# ─── RUST & SOROBAN ───────────────────────────────────────────────────────────
+/target/
+**/*.rs.bk
+Cargo.lock
 
-# dependencies
-/node_modules
-/.pnp
+# ─── NODE / NEXT.JS ───────────────────────────────────────────────────────────
+node_modules/
+/.next/
+/out/
+/build/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -15,32 +25,31 @@ target
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
+# ─── ZERO KNOWLEDGE PROOFS (CIRCOM & SNARKJS) ─────────────────────────────────
+*.ptau
+*.wtns
+*.lex
+*.res
+*.sym
+# Folder build sirkuit (kecuali jika Anda ingin menyertakan verifier-nya)
+circuit/build/
+*.zkey
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
+# ─── LOGS & DEBUGGING ─────────────────────────────────────────────────────────
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+logs
+*.log
+/coverage
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
+# ─── OS & MISC ────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+*.pem
 .vercel
-
-# typescript
 *.tsbuildinfo
 next-env.d.ts

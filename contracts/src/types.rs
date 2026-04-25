@@ -1,4 +1,6 @@
+use soroban_sdk::crypto::bn254::{Bn254G1Affine, Bn254G2Affine};
 use soroban_sdk::{contracttype, Address, BytesN, Vec};
+
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9,17 +11,18 @@ pub struct PaymentConfig {
 }
 
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ZKProof {
-    pub root: BytesN<32>,
-    pub proof: Vec<BytesN<32>>,
-    pub leaf: BytesN<32>,
+    pub g1_points: Vec<Bn254G1Affine>,
+    pub g2_points: Vec<Bn254G2Affine>,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
-    IsPaused,
     Config,
+    IsPaused,
+    MerkleRoot,
+    Nullifier(BytesN<32>),
 }
