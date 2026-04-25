@@ -1,55 +1,175 @@
-import { MerkleTree } from 'merkletreejs';
-import CryptoJS from 'crypto-js';
+'use client';
+
 import { Buffer } from "buffer";
+// @ts-ignore
+import { poseidon1, poseidon2 } from 'poseidon-lite';
+
+export interface ZKProof {
+  g1_points: { x: Buffer; y: Buffer }[];
+  g2_points: { x: { a: Buffer; b: Buffer }; y: { a: Buffer; b: Buffer } }[];
+  public_inputs: string[];
+}
+
+let globalBackend: any = null;
+let globalNoir: any = null;
+let cachedCircuit: any = null;
 
 /**
- * sha256 Cryptographic Hash Function
- * * This helper ensures that hashing remains consistent across the frontend (JavaScript)
- * and the smart contract (Rust/SHA-256).
+ * ✅ Load circuit dari /public (AMAN dari bundler)
  */
-export const sha256 = (data: Buffer | string): Buffer => {
-  const content = Buffer.isBuffer(data) ? data.toString('hex') : Buffer.from(data).toString('hex');
-  const hash = CryptoJS.SHA256(CryptoJS.enc.Hex.parse(content));
-  return Buffer.from(hash.toString(CryptoJS.enc.Hex), 'hex');
-};
+async function loadCircuit() {
+  if (cachedCircuit) return cachedCircuit;
 
-/**
- * Authorized Member Whitelist
- * * In a production environment, this list would be managed via a secure database
- * or a decentralized identity (DID) registry.
- */
-const WHITELIST = ["2410010454", "2410010001", "2410010002"];
+  const res = await fetch('/circuit.json', {
+    cache: 'no-store',
+  });
 
-// Generate hashed leaves for the Merkle Tree
-const leaves = WHITELIST.map(id => sha256(Buffer.from(id)));
+  const json = await res.json();
 
-/**
- * Merkle Tree Initialization
- * * We use 'sortPairs: true' to enforce a Canonical Merkle Tree structure.
- * This ensures that the generated Proof Path is deterministic and matches 
- * the verification logic in the Soroban Smart Contract.
- */
-const tree = new MerkleTree(leaves, sha256, { sortPairs: true });
+  // 🔥 ambil bytecode dulu
+  const bytecode =
+    json?.bytecode ??
+    json?.program?.bytecode;
 
-// Returns the Root Hash (the "Anchor") that is stored or verified on-chain.
-export const getMerkleRoot = () => tree.getHexRoot().replace('0x', '');
+  if (!bytecode || typeof bytecode !== 'string') {
+    console.error("❌ Invalid circuit.json:", json);
+    throw new Error("Invalid circuit.json: missing bytecode");
+  }
 
-/**
- * generateZKP (Zero-Knowledge Proof Generator)
- * * This is the core "Privacy-First" function:
- * 1. It takes a sensitive identifier (e.g., NIM/Student ID).
- * 2. It hashes the identifier locally (Client-Side) to create a Leaf.
- * 3. It generates a Merkle Proof Path.
- * * THe secret ID never leaves the user's browser. Only the Proof is sent to the blockchain.
- */
-export const generateZKP = (nim: string) => {
-  const leaf = sha256(Buffer.from(nim));
-  const proof = tree.getProof(leaf);
+  // ✅ DEBUG di sini (baru valid)
+  console.log("📦 BYTECODE LENGTH (browser):", bytecode.length);
+  console.log("📦 BYTECODE START:", bytecode.slice(0, 30));
+  console.log("📦 BYTECODE END:", bytecode.slice(-30));
 
-  // Return the Leaf, the Path (Proof), and the Root to be verified by the contract.
-  return {
-    leaf,
-    proof: proof.map(p => p.data),
-    root: Buffer.from(getMerkleRoot(), 'hex')
+  cachedCircuit = {
+    bytecode,
+    abi: json.abi,
   };
+
+  return cachedCircuit;
+}
+
+export const generateZkProof = async (
+  secretId: string,
+  whitelist: string[]
+): Promise<ZKProof> => {
+
+  if (typeof window === 'undefined') {
+    throw new Error('Client-side only');
+  }
+
+  try {
+    const circuitData = await loadCircuit();
+
+    if (!globalBackend || !globalNoir) {
+      console.log("🔄 [ZKP] Initializing Prover Engine...");
+
+      const { BarretenbergBackend } = await import('@noir-lang/backend_barretenberg');
+      const { Noir } = await import('@noir-lang/noir_js');
+
+      globalBackend = new BarretenbergBackend(circuitData);
+      globalNoir = new Noir(circuitData);
+
+      console.log("✅ [ZKP] Backend & Noir ready.");
+    }
+
+    // 🔐 Poseidon hashing
+    const hashedLeaves = whitelist.map(id =>
+      poseidon1([BigInt(id)]).toString()
+    );
+
+    const leafToProve = poseidon1([BigInt(secretId)]).toString();
+
+    const { index, hashPath } = calculateMerklePath(
+      leafToProve,
+      hashedLeaves,
+      10
+    );
+
+    const input = {
+      secret_id: secretId.toString(),
+      index: index.toString(),
+      hash_path: hashPath.map(h => h.toString()),
+    };
+
+    console.log("🔧 [ZKP] Executing circuit...");
+    const { witness, returnValue } = await globalNoir.execute(input);
+
+    console.log("🎨 [ZKP] Generating proof...");
+    const { proof } = await globalBackend.generateProof(witness);
+
+    console.log("✅ [ZKP] Proof generated!");
+
+    return {
+      ...parseProofToAffinePoints(proof),
+      public_inputs: [returnValue.toString()],
+    };
+
+  } catch (error: any) {
+    console.error("❌ [ZKP] Error Detail:", error);
+
+    // reset state supaya retry bersih
+    globalBackend = null;
+    globalNoir = null;
+    cachedCircuit = null;
+
+    throw error;
+  }
 };
+
+function calculateMerklePath(
+  leaf: string,
+  allLeaves: string[],
+  depth: number
+) {
+  let index = allLeaves.indexOf(leaf);
+  if (index === -1) {
+    throw new Error("Identifier not found in whitelist.");
+  }
+
+  let currentLevel = allLeaves;
+  const path: string[] = [];
+  let tempIndex = index;
+
+  for (let i = 0; i < depth; i++) {
+    const isRight = tempIndex % 2 === 1;
+    const siblingIndex = isRight ? tempIndex - 1 : tempIndex + 1;
+    const sibling = currentLevel[siblingIndex] || "0";
+
+    path.push(sibling);
+
+    const nextLevel = [];
+    for (let j = 0; j < currentLevel.length; j += 2) {
+      const left = currentLevel[j];
+      const right = currentLevel[j + 1] || "0";
+
+      nextLevel.push(
+        poseidon2([BigInt(left), BigInt(right)]).toString()
+      );
+    }
+
+    currentLevel = nextLevel;
+    tempIndex = Math.floor(tempIndex / 2);
+  }
+
+  return { index, hashPath: path };
+}
+
+function parseProofToAffinePoints(proof: Uint8Array) {
+  return {
+    g1_points: [{
+      x: Buffer.from(proof.slice(0, 32)),
+      y: Buffer.from(proof.slice(32, 64)),
+    }],
+    g2_points: [{
+      x: {
+        a: Buffer.from(proof.slice(64, 96)),
+        b: Buffer.from(proof.slice(96, 128)),
+      },
+      y: {
+        a: Buffer.from(proof.slice(128, 160)),
+        b: Buffer.from(proof.slice(160, 192)),
+      },
+    }],
+  };
+}

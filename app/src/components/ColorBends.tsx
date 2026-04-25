@@ -205,7 +205,8 @@ export default function ColorBends({
     renderer.domElement.style.display = 'block';
     container.appendChild(renderer.domElement);
 
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
+    timer.connect(document);
 
     const handleResize = () => {
       const w = container.clientWidth || 1;
@@ -224,9 +225,10 @@ export default function ColorBends({
       (window as Window).addEventListener('resize', handleResize);
     }
 
-    const loop = () => {
-      const dt = clock.getDelta();
-      const elapsed = clock.elapsedTime;
+    const loop = (timestamp: DOMHighResTimeStamp) => {
+      timer.update(timestamp);
+      const dt = timer.getDelta();
+      const elapsed = timer.getElapsed();
       material.uniforms.uTime.value = elapsed;
 
       const deg = (rotationRef.current % 360) + autoRotateRef.current * elapsed;
@@ -251,6 +253,7 @@ export default function ColorBends({
       else (window as Window).removeEventListener('resize', handleResize);
       geometry.dispose();
       material.dispose();
+      timer.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
       if (renderer.domElement && renderer.domElement.parentElement === container) {
