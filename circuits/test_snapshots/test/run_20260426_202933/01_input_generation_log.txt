@@ -1,0 +1,3 @@
+🛠 Calculating mathematical parameters for ZK...
+✅ File input.json generated successfully!
+🌲 Real Merkle Root:  16220781353907297145939387845430106371158012208346290982638864868308119634632

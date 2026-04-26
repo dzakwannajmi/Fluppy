@@ -6,6 +6,8 @@
 //! Dokumentasi di bawah ini menjelaskan arsitektur produksi yang akan digunakan 
 //! saat Protocol 25 (CAP-0074) sepenuhnya aktif.
 //!
+//! 
+//! 
 //! Pure cryptographic verification for the FluppyPayment Circom circuit.
 //! **No payment logic lives here.** This module is a narrow verification
 //! gateway — the only thing it does is accept or reject a Groth16 proof.

@@ -6,11 +6,11 @@ import {
   TransactionBuilder,
   Account,
   xdr,
-  nativeToScVal
 } from "@stellar/stellar-sdk";
 import { isConnected, requestAccess, signTransaction } from "@stellar/freighter-api";
 import { Buffer } from "buffer";
-import { ZKProof } from "./zkp";
+import { generatePaymentProof, PaymentProofInputs } from "./zkp";
+import { nativeToScVal } from '@stellar/stellar-sdk';
 
 /**
  * Stellar Infrastructure Configuration
@@ -21,12 +21,19 @@ export const NETWORK_PASSPHRASE = Networks.TESTNET;
 export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID!;
 
 /**
+ * Helper: Mengubah Hex String dari SnarkJS menjadi xdr.ScVal (BytesN)
+ */
+const hexToBytesN = (hexStr: string) => {
+  return xdr.ScVal.scvBytes(Buffer.from(hexStr, "hex"));
+};
+
+/**
  * payWithZk
  * * ATOMIC SETTLEMENT LOGIC:
- * Handles the conversion of ZK-Proof points into Soroban-compatible 
- * BN254 Affine structures (64-byte for G1, 128-byte for G2).
+ * Men-generate bukti ZK di sisi klien, lalu memetakannya secara deterministik
+ * ke format BytesN untuk diverifikasi oleh fungsi Protocol 25 di Soroban.
  */
-export const payWithZk = async (to: string, amount: bigint, zkProof: ZKProof) => {
+export const payWithZk = async (to: string, amount: bigint, inputs: PaymentProofInputs) => {
   if (!(await isConnected())) throw new Error("Freighter wallet not found.");
 
   // 1. Get User Address & Account Sequence
@@ -36,68 +43,48 @@ export const payWithZk = async (to: string, amount: bigint, zkProof: ZKProof) =>
   const accountResponse = await rpcServer.getAccount(from);
 
   /**
-   * STEP 2: BN254 POINT MAPPING (Protocol 25)
-   * Soroban expects concatenated bytes for Affine points.
+   * STEP 2: ZK-PROOF GENERATION (Client-Side)
    */
-  console.log("Mapping ZK Points to Soroban XDR...");
-
-  // G1 Mapping: Pastikan kita tidak mengambil 'number' tunggal
-  const g1PointsScVal = xdr.ScVal.scvVec(
-    (zkProof.g1_points as any[]).map((p: any) => {
-      // Pastikan data adalah Buffer/Uint8Array, bukan number
-      const x = p.x instanceof Uint8Array ? p.x : Buffer.from(p.x || []);
-      const y = p.y instanceof Uint8Array ? p.y : Buffer.from(p.y || []);
-
-      return xdr.ScVal.scvBytes(Buffer.concat([x, y]));
-    })
+  console.log("🛠️ [ZKP] Generating Groth16 Proof locally...");
+  const proof = await generatePaymentProof(
+    inputs,
+    "/circuit/fluppy_payment.wasm",
+    "/circuit/circuit_final.zkey"
   );
 
-  // G2 Mapping
-  const g2PointsScVal = xdr.ScVal.scvVec(
-    (zkProof.g2_points as any[]).map((p: any) => {
-      const xa = p.x?.a || p[0];
-      const xb = p.x?.b || p[1];
-      const ya = p.y?.a || p[2];
-      const yb = p.y?.b || p[3];
+  /**
+   * STEP 3: XDR MAPPING (Deterministic BytesN mapping)
+   * Menyusun argumen secara ketat sesuai dengan urutan fungsi di `lib.rs`:
+   * pay_with_zk(env, from, to, amount, pi_a, pi_b, pi_c, nullifier, merkle_root, recipient_hash, min_amount, max_amount)
+   */
+  console.log("🔄 [Stellar] Mapping ZK Points to Soroban XDR...");
+  
+  const contractArgs = [
+    new Address(from).toScVal(),                                // 1. from
+    new Address(to).toScVal(),                                  // 2. to
+    nativeToScVal(amount, { type: "i128" }),                    // 3. amount
+    hexToBytesN(proof.pi_a),                                    // 4. pi_a (64 bytes)
+    hexToBytesN(proof.pi_b),                                    // 5. pi_b (128 bytes)
+    hexToBytesN(proof.pi_c),                                    // 6. pi_c (64 bytes)
+    hexToBytesN(proof.publicSignals[0]),                        // 7. nullifier
+    hexToBytesN(proof.publicSignals[2]),                        // 8. merkle_root (Index 2)
+    hexToBytesN(proof.publicSignals[3]),                        // 9. recipient_hash
+    hexToBytesN(proof.publicSignals[4]),                        // 10. min_amount
+    hexToBytesN(proof.publicSignals[5]),                        // 11. max_amount
+  ];
 
-      // Konversi semua ke Buffer sebelum digabung
-      return xdr.ScVal.scvBytes(Buffer.concat([
-        Buffer.from(xa), Buffer.from(xb),
-        Buffer.from(ya), Buffer.from(yb)
-      ]));
-    })
-  );
-
-  // 3. Build Transaction
+  // 3b. Build Transaction
   const contract = new Contract(CONTRACT_ID);
-
-  // We wrap the ZK data into a Map/Struct as expected by the contract
-  const zkDataScVal = xdr.ScVal.scvMap([
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("g1_points"),
-      val: g1PointsScVal
-    }),
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("g2_points"),
-      val: g2PointsScVal
-    })
-  ]);
 
   const tx = new TransactionBuilder(
     new Account(from, accountResponse.sequenceNumber()),
     {
-      fee: "10000",
+      fee: "100000", // Sedikit dinaikkan karena transaksi ZK butuh lebih banyak byte
       networkPassphrase: NETWORK_PASSPHRASE
     }
   )
     .addOperation(
-      contract.call(
-        "pay_with_zk",
-        new Address(from).toScVal(),
-        new Address(to).toScVal(),
-        nativeToScVal(amount, { type: "i128" }),
-        zkDataScVal
-      )
+      contract.call("pay_with_zk", ...contractArgs)
     )
     .setTimeout(30)
     .build();
@@ -105,7 +92,7 @@ export const payWithZk = async (to: string, amount: bigint, zkProof: ZKProof) =>
   /**
    * STEP 4: SIMULATION & SIGNING
    */
-  console.log("🛠️ [Stellar] Simulating transaction...");
+  console.log("⚙️ [Stellar] Simulating transaction...");
   const preparedTx = await rpcServer.prepareTransaction(tx);
 
   console.log("✍️ [Stellar] Awaiting Freighter signature...");
@@ -118,14 +105,14 @@ export const payWithZk = async (to: string, amount: bigint, zkProof: ZKProof) =>
   /**
    * STEP 5: SUBMISSION
    */
-  console.log("Submitting to Network...");
+  console.log("🚀 Submitting to Network...");
   const submission = await rpcServer.sendTransaction(
     TransactionBuilder.fromXDR(signResult.signedTxXdr, NETWORK_PASSPHRASE)
   );
 
   if (submission.status === "ERROR") {
     console.error("Submission Error:", submission);
-    throw new Error("RPC Submission Failed.");
+    throw new Error("RPC Submission Failed. Cek parameter XDR.");
   }
 
   return await pollTransaction(submission.hash);

@@ -1,6 +1,7 @@
 # ─── DATABASE & SECRETS (CRITICAL) ────────────────────────────────────────────
 .env
 .env.local
+.env.*
 .env.development.local
 .env.test.local
 .env.production.local
@@ -9,13 +10,16 @@
 
 # ─── RUST & SOROBAN ───────────────────────────────────────────────────────────
 /target/
+target/
+.soroban/
 **/*.rs.bk
 Cargo.lock
 
 # ─── NODE / NEXT.JS ───────────────────────────────────────────────────────────
 node_modules/
 /.next/
-/out/
+/out/   
+out/
 /build/
 .pnp
 .pnp.*
@@ -25,13 +29,14 @@ node_modules/
 !.yarn/releases
 !.yarn/versions
 
-# ─── ZERO KNOWLEDGE PROOFS (CIRCOM & SNARKJS) ─────────────────────────────────
+# ─── ZK Raw Artifacts ─────────────────────────────────
+
 *.ptau
 *.wtns
 *.lex
 *.res
 *.sym
-# Folder build sirkuit (kecuali jika Anda ingin menyertakan verifier-nya)
+circuits/*.zkey
 circuit/build/
 *.zkey
 
@@ -53,3 +58,4 @@ Thumbs.db
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
