@@ -1,175 +1,92 @@
-'use client';
+import * as snarkjs from "snarkjs";
 
-import { Buffer } from "buffer";
-// @ts-ignore
-import { poseidon1, poseidon2 } from 'poseidon-lite';
+// ============================================================================
+// Interfaces
+// ============================================================================
 
-export interface ZKProof {
-  g1_points: { x: Buffer; y: Buffer }[];
-  g2_points: { x: { a: Buffer; b: Buffer }; y: { a: Buffer; b: Buffer } }[];
-  public_inputs: string[];
+export interface CircuitInputs {
+  // Private Inputs
+  secret: bigint | string;
+  nonce: bigint | string;
+  amount: bigint | string;
+  pathElements: (bigint | string)[];
+  pathIndices: (number | string)[];
+
+  // Public Inputs
+  merkleRoot: bigint | string;
+  recipientHash: bigint | string;
+  minAmount: bigint | string;
+  maxAmount: bigint | string;
 }
 
-let globalBackend: any = null;
-let globalNoir: any = null;
-let cachedCircuit: any = null;
+export interface FluppyProof {
+  pi_a: string;         // 64 hex chars (32 bytes X || 32 bytes Y)
+  pi_b: string;         // 128 hex chars (x.c1 || x.c0 || y.c1 || y.c0)
+  pi_c: string;         // 64 hex chars (32 bytes X || 32 bytes Y)
+  publicSignals: string[]; // [nullifier, verifiedRoot, merkleRoot, recipientHash, minAmount, maxAmount]
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
 
 /**
- * ✅ Load circuit dari /public (AMAN dari bundler)
+ * Normalizes a SnarkJS decimal string output into a 32-byte zero-padded hex string.
+ * This is crucial for matching the Soroban BytesN<32> / BytesN<64> formatting.
  */
-async function loadCircuit() {
-  if (cachedCircuit) return cachedCircuit;
-
-  const res = await fetch('/circuit.json', {
-    cache: 'no-store',
-  });
-
-  const json = await res.json();
-
-  // 🔥 ambil bytecode dulu
-  const bytecode =
-    json?.bytecode ??
-    json?.program?.bytecode;
-
-  if (!bytecode || typeof bytecode !== 'string') {
-    console.error("❌ Invalid circuit.json:", json);
-    throw new Error("Invalid circuit.json: missing bytecode");
-  }
-
-  // ✅ DEBUG di sini (baru valid)
-  console.log("📦 BYTECODE LENGTH (browser):", bytecode.length);
-  console.log("📦 BYTECODE START:", bytecode.slice(0, 30));
-  console.log("📦 BYTECODE END:", bytecode.slice(-30));
-
-  cachedCircuit = {
-    bytecode,
-    abi: json.abi,
-  };
-
-  return cachedCircuit;
-}
-
-export const generateZkProof = async (
-  secretId: string,
-  whitelist: string[]
-): Promise<ZKProof> => {
-
-  if (typeof window === 'undefined') {
-    throw new Error('Client-side only');
-  }
-
-  try {
-    const circuitData = await loadCircuit();
-
-    if (!globalBackend || !globalNoir) {
-      console.log("🔄 [ZKP] Initializing Prover Engine...");
-
-      const { BarretenbergBackend } = await import('@noir-lang/backend_barretenberg');
-      const { Noir } = await import('@noir-lang/noir_js');
-
-      globalBackend = new BarretenbergBackend(circuitData);
-      globalNoir = new Noir(circuitData);
-
-      console.log("✅ [ZKP] Backend & Noir ready.");
-    }
-
-    // 🔐 Poseidon hashing
-    const hashedLeaves = whitelist.map(id =>
-      poseidon1([BigInt(id)]).toString()
-    );
-
-    const leafToProve = poseidon1([BigInt(secretId)]).toString();
-
-    const { index, hashPath } = calculateMerklePath(
-      leafToProve,
-      hashedLeaves,
-      10
-    );
-
-    const input = {
-      secret_id: secretId.toString(),
-      index: index.toString(),
-      hash_path: hashPath.map(h => h.toString()),
-    };
-
-    console.log("🔧 [ZKP] Executing circuit...");
-    const { witness, returnValue } = await globalNoir.execute(input);
-
-    console.log("🎨 [ZKP] Generating proof...");
-    const { proof } = await globalBackend.generateProof(witness);
-
-    console.log("✅ [ZKP] Proof generated!");
-
-    return {
-      ...parseProofToAffinePoints(proof),
-      public_inputs: [returnValue.toString()],
-    };
-
-  } catch (error: any) {
-    console.error("❌ [ZKP] Error Detail:", error);
-
-    // reset state supaya retry bersih
-    globalBackend = null;
-    globalNoir = null;
-    cachedCircuit = null;
-
-    throw error;
-  }
+const toHex32 = (decStr: string | number | bigint): string => {
+  return BigInt(decStr).toString(16).padStart(64, "0");
 };
 
-function calculateMerklePath(
-  leaf: string,
-  allLeaves: string[],
-  depth: number
-) {
-  let index = allLeaves.indexOf(leaf);
-  if (index === -1) {
-    throw new Error("Identifier not found in whitelist.");
+// ============================================================================
+// Main Prover Logic
+// ============================================================================
+
+/**
+ * Generates a Groth16 proof using SnarkJS and formats the raw outputs
+ * for direct on-chain verification in Soroban (Protocol 25 BN254).
+ */
+export async function generatePaymentProof(
+  inputs: CircuitInputs,
+  wasmPath: string = "/circuit.wasm",
+  zkeyPath: string = "/circuit_final.zkey"
+): Promise<FluppyProof> {
+  try {
+    const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+      inputs,
+      wasmPath,
+      zkeyPath
+    );
+
+    // 1. Format pi_a (G1 Point) -> Drop the '1' at index 2
+    const pi_a = toHex32(proof.pi_a[0]) + toHex32(proof.pi_a[1]);
+
+    // 2. Format pi_b (G2 Point) -> Map SnarkJS [[c1, c0], [c1, c0]] to flat hex
+    // Source: verify.rs VerificationKey G2 format mapping
+    const pi_b =
+      toHex32(proof.pi_b[0][0]) + // X coordinate: c1
+      toHex32(proof.pi_b[0][1]) + // X coordinate: c0
+      toHex32(proof.pi_b[1][0]) + // Y coordinate: c1
+      toHex32(proof.pi_b[1][1]);  // Y coordinate: c0
+
+    // 3. Format pi_c (G1 Point) -> Drop the '1' at index 2
+    const pi_c = toHex32(proof.pi_c[0]) + toHex32(proof.pi_c[1]);
+
+    // 4. Normalize Public Signals (Outputs + Inputs)
+    // Circuit Order: [nullifier, verifiedRoot, merkleRoot, recipientHash, minAmount, maxAmount]
+    const formattedSignals = publicSignals.map((sig: string | number | bigint) =>
+      toHex32(sig)
+    );
+
+    return {
+      pi_a,
+      pi_b,
+      pi_c,
+      publicSignals: formattedSignals,
+    };
+
+  } catch (error) {
+    console.error("[Fluppy ZKP] Proof Generation Failed:", error);
+    throw new Error("Failed to generate Groth16 proof. Verify input bounds and formats.");
   }
-
-  let currentLevel = allLeaves;
-  const path: string[] = [];
-  let tempIndex = index;
-
-  for (let i = 0; i < depth; i++) {
-    const isRight = tempIndex % 2 === 1;
-    const siblingIndex = isRight ? tempIndex - 1 : tempIndex + 1;
-    const sibling = currentLevel[siblingIndex] || "0";
-
-    path.push(sibling);
-
-    const nextLevel = [];
-    for (let j = 0; j < currentLevel.length; j += 2) {
-      const left = currentLevel[j];
-      const right = currentLevel[j + 1] || "0";
-
-      nextLevel.push(
-        poseidon2([BigInt(left), BigInt(right)]).toString()
-      );
-    }
-
-    currentLevel = nextLevel;
-    tempIndex = Math.floor(tempIndex / 2);
-  }
-
-  return { index, hashPath: path };
-}
-
-function parseProofToAffinePoints(proof: Uint8Array) {
-  return {
-    g1_points: [{
-      x: Buffer.from(proof.slice(0, 32)),
-      y: Buffer.from(proof.slice(32, 64)),
-    }],
-    g2_points: [{
-      x: {
-        a: Buffer.from(proof.slice(64, 96)),
-        b: Buffer.from(proof.slice(96, 128)),
-      },
-      y: {
-        a: Buffer.from(proof.slice(128, 160)),
-        b: Buffer.from(proof.slice(160, 192)),
-      },
-    }],
-  };
 }
