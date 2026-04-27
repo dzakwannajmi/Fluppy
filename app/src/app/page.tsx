@@ -1,247 +1,341 @@
-// src/app/page.tsx
-// SCF AUDIT: FULLY INTEGRATED UI FOR ZK-PAYMENT
-// CHANGES:
-// 1. Added nimSecret state + input field (required for ZKP)
-// 2. Updated executePayment call to pass 3 parameters (matches useFluppy.ts)
-// 3. Button disabled when nimSecret empty or loading
-// 4. UI improved with clean NIM input (privacy-focused design)
-
 "use client";
 
-import { useState, useRef } from "react";
-import { useFluppy } from "../hooks/useFluppy";
-import { SuccessReceipt } from "../components/SuccessReceipt";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence, useInView } from "framer-motion";
 
-// --- MOTION & REACT BITS ---
-import { motion, AnimatePresence } from "motion/react";
+// 👇 IMPORT FREIGHTER API 👇
+import { isConnected, requestAccess } from "@stellar/freighter-api";
+
+// Import Komponen Custom ReactBits & Milikmu
 import ColorBends from "../components/ColorBends";
 import DotField from "../components/DotField";
 import DecryptedText from "../components/DecryptedText";
-import VariableProximity from "../components/VariableProximity";
+import { SuccessReceipt } from "../components/SuccessReceipt"; // Pastikan path ini benar
 
-export default function Home() {
-  const {
-    walletAddress,
-    loading,
-    txHash,
-    setTxHash,
-    logs,
-    connectWallet,
-    executePayment,
-  } = useFluppy();
+// ─── Design tokens (DARK THEME) ─────────────────────────────────────────────
+const T = {
+  bg: "#120F17",
+  fg: "#FDFCFD",
+  muted: "#94a3b8",
+  primary: "var(--primary, #FF85BB)",
+  purple: "var(--accent-purple, #B497CF)",
+  dark: "#0A080D",
+  card: "#1E1B24",
+  border: "#2D2A33",
+  border2: "#3F3C45",
+};
 
-  const [network, setNetwork] = useState<"testnet" | "mainnet">("testnet");
-  const [hotelWallet, setHotelWallet] = useState("");
-  const [amount, setAmount] = useState("1.0");
-  const [nimSecret, setNimSecret] = useState("");   // ← NEW: NIM/Secret ID
-  const [copied, setCopied] = useState(false);
+// ─── Shared variants ──────────────────────────────────────────────────────────
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
+};
+const stagger = { visible: { transition: { staggerChildren: 0.11 } } };
 
-  const containerRef = useRef(null);
+type LogKind = "info" | "success" | "error";
+type LogEntry = { id: number; icon: string; text: string; kind: LogKind };
 
-  const handleCopy = () => {
-    if (walletAddress) {
-      navigator.clipboard.writeText(walletAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+// ═════════════════════════════════════════════════════════════════════════════
+//  TerminalLog Component
+// ═════════════════════════════════════════════════════════════════════════════
+function TerminalLog({ logs, running, txHash }: { logs: LogEntry[]; running: boolean; txHash?: string | null }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  const hasDone = logs.some((l) => l.kind === "success");
+  const hasError = logs.some((l) => l.kind === "error");
+
+  return (
+    <div className="w-full rounded-2xl overflow-hidden backdrop-blur-xl relative z-20" style={{ background: `${T.dark}90`, boxShadow: `0 0 0 1px rgba(255,255,255,0.05), 0 32px 64px -16px rgba(0,0,0,0.65), 0 0 80px -20px ${T.primary}33` }}>
+      <div className="flex items-center gap-2 px-5 py-3.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+        <span className="w-3 h-3 rounded-full bg-red-500/80" />
+        <span className="w-3 h-3 rounded-full bg-yellow-400/80" />
+        <span className="w-3 h-3 rounded-full bg-green-400/80" />
+        <span className="mx-auto text-xs tracking-widest select-none uppercase" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.4)" }}>Soroban Exec Shell</span>
+      </div>
+
+      <div className="px-6 py-5 min-h-[240px] max-h-[320px] overflow-y-auto space-y-2.5 text-sm" style={{ fontFamily: "monospace" }}>
+        {logs.length === 0 && !running && <p className="text-xs select-none" style={{ color: "rgba(255,255,255,0.3)" }}>Awaiting execution…</p>}
+        <AnimatePresence>
+          {logs.map((log) => (
+            <motion.div key={log.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="flex items-start gap-2.5 leading-relaxed" style={{ color: log.kind === "success" ? "#4ade80" : log.kind === "error" ? "#f87171" : "rgba(255,255,255,0.8)" }}>
+              <span className="flex-shrink-0 text-base leading-none mt-0.5">{log.icon}</span>
+              <span>{log.text}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        {running && <motion.span animate={{ opacity: [1, 0] }} transition={{ repeat: Infinity, duration: 0.65 }} className="inline-block w-2 h-[18px] align-middle" style={{ background: T.primary, borderRadius: 1 }} />}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="px-5 py-2.5 flex items-center gap-3" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        {running ? (
+          <><motion.span animate={{ opacity: [1, 0.25] }} transition={{ repeat: Infinity, duration: 0.9 }} className="w-1.5 h-1.5 rounded-full" style={{ background: T.primary }} /><span className="text-xs" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.5)" }}>executing…</span></>
+        ) : hasDone && txHash ? (
+          <><span className="w-1.5 h-1.5 rounded-full bg-green-400" /><span className="text-xs" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.5)" }}>exit code 0 · proof verified</span><a href={`https://stellar.expert/explorer/testnet/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs underline underline-offset-2" style={{ fontFamily: "monospace", color: T.primary }}>Explorer →</a></>
+        ) : hasError ? (
+          <><span className="w-1.5 h-1.5 rounded-full bg-red-400" /><span className="text-xs" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.5)" }}>exit code 1 · check logs</span></>
+        ) : (
+          <span className="text-xs select-none" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.3)" }}>ready</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Main Page 
+// ═════════════════════════════════════════════════════════════════════════════
+export default function Page() {
+  // UI & Terminal States
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  // Form & Wallet States
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [secret, setSecret] = useState("2410010454");
+  const [destination, setDestination] = useState("GDLST72TGNYOET54VCY7A63FKWHVUWPFAOOKJKCURI3VQXXLWWE7CLSF");
+  const [amount, setAmount] = useState("1"); // Default 1 USDC
+
+  const demoRef = useRef<HTMLElement>(null);
+  const idRef = useRef(0);
+
+  const addLog = useCallback((icon: string, text: string, kind: LogKind = "info") => {
+    setLogs((p) => [...p, { id: ++idRef.current, icon, text, kind }]);
+  }, []);
+
+  // ─── CONNECT FREIGHTER WALLET ──────────────────────────────
+  // ─── CONNECT FREIGHTER WALLET ──────────────────────────────
+  const handleConnectWallet = async () => {
+    try {
+      const connectedStatus = await isConnected();
+
+      // Freighter API terbaru mengembalikan object { isConnected: boolean }
+      if (connectedStatus === true || connectedStatus.isConnected) {
+
+        // Meminta akses ke dompet pengguna (ini akan memunculkan pop-up Freighter)
+        const access = await requestAccess();
+
+        if (access.error) {
+          throw new Error(access.error);
+        }
+
+        const pubKey = access.address; // Freighter menyebutnya 'address', bukan 'publicKey'
+        setPublicKey(pubKey);
+        addLog("🦊", `Freighter Connected: ${pubKey.slice(0, 6)}...${pubKey.slice(-4)}`, "success");
+
+      } else {
+        alert("Please install Freighter extension!");
+        window.open("https://freighter.app", "_blank");
+      }
+    } catch (e: any) {
+      console.error(e);
+      addLog("❌", `Wallet error: ${e.message}`, "error");
     }
   };
 
-  // SCF AUDIT: Prevent calling with empty NIM
-  const isFormValid = !!walletAddress && !!hotelWallet && !!nimSecret.trim();
+  // ─── EXECUTE PAYMENT ───────────────────────────────────────
+  const handleRunPayment = async () => {
+    if (!publicKey) {
+      alert("Please connect your Freighter wallet first!");
+      return;
+    }
+    if (running) return;
+
+    // Konversi USDC (1 USDC = 10,000,000 stroops)
+    const amountStroops = Math.floor(parseFloat(amount) * 10_000_000);
+
+    if (amountStroops <= 0 || isNaN(amountStroops)) {
+      alert("Invalid amount!");
+      return;
+    }
+
+    setRunning(true);
+    setDone(false);
+    setLogs([]);
+    setTxHash(null);
+
+    // Auto-scroll ke terminal
+    setTimeout(() => { demoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 80);
+
+    try {
+      addLog("🛠️", "Generating ZK Proof (Groth16 / BN254)...");
+
+      // 1. Generate Proof API
+      const resProof = await fetch('/api/generate-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret, destination, amount: amountStroops })
+      });
+      const dataProof = await resProof.json();
+      if (!resProof.ok) throw new Error(dataProof.error);
+
+      addLog("🔐", "Validating Merkle Membership (depth=20)...");
+      addLog("🧮", `Computing Hash for Destination: ${destination.slice(0, 5)}...`);
+      addLog("📦", "Packaging proof for Soroban (XDR encoding)...");
+      addLog("🚀", "Submitting transaction to Stellar Testnet...");
+
+      // 2. Submit Tx API 
+      // (Nanti ini akan diubah menggunakan Freighter XDR Signing)
+      const resTx = await fetch('/api/submit-tx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proof: dataProof.proof, destination, amount: amountStroops })
+      });
+      const dataTx = await resTx.json();
+      if (!resTx.ok) throw new Error(dataTx.error);
+
+      addLog("⛓️", "Executing Smart Contract: execute_payment()...");
+      addLog("💸", "Atomic split → 95% merchant · 5% treasury...");
+      addLog("🎉", `SUCCESS — Tx: ${dataTx.hash.slice(0, 10)}...`, "success");
+
+      setTxHash(dataTx.hash);
+      setDone(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      addLog("❌", `Transaction failed: ${msg}`, "error");
+    } finally {
+      setRunning(false);
+    }
+  };
 
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden font-mono bg-background transition-colors duration-500">
+    <div className="relative min-h-screen antialiased overflow-x-hidden" style={{ background: T.bg, color: T.fg, fontFamily: "system-ui, sans-serif" }}>
 
-      {/* --- SUCCESS RECEIPT MODAL --- */}
-      <AnimatePresence>
-        {txHash && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="relative max-w-2xl w-full"
-            >
-              <button
-                onClick={() => setTxHash(null)}
-                className="absolute -top-12 right-0 text-primary font-pixel-square text-[10px] hover:scale-105 transition-all cursor-pointer bg-primary/10 px-4 py-2 border border-primary/20 rounded-lg"
-              >
-                [ RETURN_TO_DASHBOARD ]
-              </button>
-              <SuccessReceipt hash={txHash} amount={amount} onDone={() => setTxHash(null)} />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* --- BACKGROUND --- */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute inset-0 opacity-20">
-          <ColorBends colors={["#FF85BB", "#B497CF", "#0F0B0A"]} speed={0.1} />
+      {/* 🌟 FIXED BACKGROUND LAYER 🌟 */}
+      <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+        <div className="absolute inset-0 opacity-40 mix-blend-screen">
+          <ColorBends
+            colors={["#FF85Bb"]}
+            rotation={90} speed={0.2} scale={1} frequency={1} warpStrength={1}
+            mouseInfluence={1} noise={0.15} parallax={0.5} iterations={1}
+            intensity={1.5} bandWidth={6} transparent autoRotate={0} color="#FF85Bb"
+          />
         </div>
-        <DotField intensity={0.3} dotRadius={1.2} dotSpacing={18} />
+        <div className="absolute inset-0 opacity-30">
+          <DotField />
+        </div>
       </div>
 
-      <main className="relative z-20 container mx-auto py-10 px-6 max-w-7xl">
+      {/* Layer Content */}
+      <div className="relative" style={{ zIndex: 10 }}>
 
-        {/* HEADER & NETWORK SWITCHER */}
-        <header className="flex flex-col md:flex-row justify-between items-center mb-16 gap-6 border-b border-card-border pb-8">
-          <div ref={containerRef} style={{ position: 'relative' }}>
-            <VariableProximity
-              label="FLUPPY"
-              className="text-6xl font-pixel-square text-primary tracking-tighter"
-              fromFontVariationSettings="'wght' 400"
-              toFontVariationSettings="'wght' 900"
-              containerRef={containerRef}
-              radius={100}
-              falloff="linear"
-            />
-          </div>
+        {/* ── Nav ──────────────────────────────────────────────────── */}
+        <nav className="sticky top-0 backdrop-blur-xl border-b" style={{ borderColor: T.border, background: `${T.bg}cc`, zIndex: 50 }}>
+          <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg" style={{ background: `linear-gradient(135deg, ${T.primary}, ${T.purple})` }} />
+              <span className="font-bold text-lg tracking-tighter">Fluppy</span>
+            </div>
 
-          {/* BASH STYLE NETWORK TOGGLE */}
-          <div className="flex bg-card/30 border border-card-border p-1.5 rounded-2xl backdrop-blur-md">
+            {/* FREIGHTER CONNECT BUTTON */}
             <button
-              onClick={() => setNetwork("testnet")}
-              className={`px-6 py-2 rounded-xl text-[10px] font-bold transition-all ${network === "testnet" ? "bg-primary text-primary-foreground shadow-[0_0_20px_rgba(255,133,187,0.3)]" : "opacity-30 hover:opacity-50"}`}
+              onClick={handleConnectWallet}
+              className="px-5 py-2 rounded-full text-sm font-bold border transition-all hover:scale-105 active:scale-95"
+              style={{
+                backgroundColor: publicKey ? `${T.purple}10` : "white",
+                color: publicKey ? T.primary : "black",
+                borderColor: publicKey ? `${T.purple}30` : "transparent",
+              }}
             >
-              TESTNET_V1
-            </button>
-            <button
-              disabled
-              className="px-6 py-2 rounded-xl text-[10px] font-bold opacity-10 cursor-not-allowed italic"
-            >
-              MAINNET (PHASE_5)
+              {publicKey ? `🦊 ${publicKey.slice(0, 5)}...${publicKey.slice(-4)}` : "Connect Wallet"}
             </button>
           </div>
-        </header>
+        </nav>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        {/* ── Hero & Form Input ───────────────────────────────────── */}
+        <section className="max-w-5xl mx-auto px-6 pt-20 pb-20 text-center">
+          <motion.div initial="hidden" animate="visible" variants={stagger}>
 
-          {/* PANEL KIRI: TRANSACTION & WALLET */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="bg-card/40 backdrop-blur-3xl border border-card-border rounded-[2.5rem] p-8 shadow-2xl">
-              {!walletAddress ? (
-                <button
-                  onClick={connectWallet}
-                  className="w-full py-8 bg-primary text-primary-foreground rounded-2xl font-black tracking-widest uppercase text-xs hover:brightness-110 hover:shadow-[0_0_20px_rgba(255,133,187,0.4)] transition-all active:scale-95 cursor-pointer"
-                >
-                  Authorize_Freighter
-                </button>
-              ) : (
-                <div className="space-y-8">
-                  {/* Active Wallet */}
-                  <div className="flex justify-between items-end bg-glow/40 p-5 rounded-2xl border border-card-border/50">
-                    <div className="overflow-hidden">
-                      <label className="text-[7px] opacity-40 uppercase tracking-[0.3em] mb-2 block">Active_Identity</label>
-                      <p className="text-[10px] text-primary font-bold truncate pr-4">{walletAddress}</p>
-                    </div>
-                    <button
-                      onClick={connectWallet}
-                      className="shrink-0 text-[8px] border border-primary/30 text-primary px-3 py-2 rounded-lg hover:bg-primary/10 transition-all font-bold"
-                    >
-                      SWITCH
-                    </button>
-                  </div>
+            <motion.div variants={fadeUp} className="mb-6 inline-flex items-center gap-2 text-xs px-4 py-1.5 rounded-full border backdrop-blur-sm" style={{ fontFamily: "monospace", color: T.purple, borderColor: `${T.purple}40`, background: `${T.purple}10` }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              Stellar Testnet · ZK Verified
+            </motion.div>
 
-                  {/* INPUTS */}
-                  <div className="space-y-6">
-                    {/* Destination Merchant */}
-                    <div>
-                      <label className="text-[8px] opacity-40 uppercase tracking-widest mb-3 block">Destination_Merchant</label>
-                      <input
-                        type="text"
-                        className="w-full p-4 bg-input/20 border border-card-border focus:border-primary rounded-xl text-[10px] outline-none transition-all"
-                        placeholder="G... Address"
-                        value={hotelWallet}
-                        onChange={(e) => setHotelWallet(e.target.value)}
-                      />
-                    </div>
+            <motion.h1 variants={fadeUp} className="text-5xl sm:text-7xl font-bold tracking-tighter mb-6 flex flex-col items-center">
+              <DecryptedText text="Private Payments" className="text-white" />
+              <span style={{ background: `linear-gradient(130deg, ${T.primary} 10%, ${T.purple} 90%)`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                on Stellar
+              </span>
+            </motion.h1>
 
-                    {/* Amount USDC */}
-                    <div>
-                      <label className="text-[8px] opacity-40 uppercase tracking-widest mb-3 block">Amount_USDC</label>
-                      <input
-                        type="number"
-                        className="w-full p-5 bg-input/20 border border-card-border focus:border-primary rounded-xl text-4xl font-black outline-none transition-all"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                      />
-                    </div>
+            <motion.p variants={fadeUp} className="text-lg leading-relaxed max-w-xl mx-auto mb-10" style={{ color: T.muted }}>
+              Send USDC without exposing amounts or identities. Settled atomically via Soroban Smart Contracts.
+            </motion.p>
 
-                    {/* NEW: NIM / Secret ID Input (Privacy Field) */}
-                    <div>
-                      <label className="text-[8px] opacity-40 uppercase tracking-widest mb-3 block">
-                        NIM_Secret_ID <span className="text-red-400">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full p-4 bg-input/20 border border-card-border focus:border-primary rounded-xl text-[10px] outline-none transition-all font-mono"
-                        placeholder="2410010454"
-                        value={nimSecret}
-                        onChange={(e) => setNimSecret(e.target.value)}
-                      />
-                      <p className="text-[8px] text-primary/50 mt-1">Private identifier • never leaves your device</p>
-                    </div>
-                  </div>
-
-                  {/* EXECUTE BUTTON - Now with 3 parameters */}
-                  <button
-                    onClick={() => executePayment(amount, hotelWallet, nimSecret)}
-                    disabled={!isFormValid || loading}
-                    className="w-full py-6 bg-primary text-primary-foreground rounded-2xl font-black text-sm tracking-[0.3em] uppercase shadow-lg shadow-primary/20 hover:brightness-110 hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-30 disabled:cursor-wait cursor-pointer"
-                  >
-                    {loading ? ">>> RUNNING ZKP..." : "EXECUTE_ZK_PAYMENT"}
-                  </button>
+            {/* 📝 FORM INPUT PEMBAYARAN */}
+            <motion.div variants={fadeUp} className="max-w-md mx-auto mb-10 p-6 rounded-2xl border backdrop-blur-xl text-left shadow-2xl" style={{ backgroundColor: `${T.dark}90`, borderColor: "rgba(255,255,255,0.08)" }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-mono font-bold tracking-widest mb-1.5 uppercase" style={{ color: T.purple }}>Identity Secret (NIM)</label>
+                  <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} className="w-full bg-black/40 border rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors" style={{ borderColor: "rgba(255,255,255,0.1)" }} />
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* PANEL KANAN: TRANSPARENCY BASH TERMINAL */}
-          <div className="lg:col-span-7">
-            <div className="bg-[#050505] border border-card-border rounded-[2.5rem] p-8 h-[600px] flex flex-col shadow-inner">
-              <div className="flex justify-between items-center mb-8 border-b border-card-border/50 pb-5">
-                <div className="flex items-center gap-3 font-pixel-square text-[9px] text-primary tracking-[0.4em]">
-                  <span className={`w-2 h-2 rounded-full ${network === 'testnet' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                  LIVE_SOROBAN_AUDIT
+                <div>
+                  <label className="block text-xs font-mono font-bold tracking-widest mb-1.5 uppercase" style={{ color: T.purple }}>Destination Address</label>
+                  <input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full bg-black/40 border rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors" style={{ borderColor: "rgba(255,255,255,0.1)" }} />
                 </div>
-                <span className="text-[8px] opacity-20 font-bold uppercase">v1.0.4-stable</span>
+                <div>
+                  <label className="block text-xs font-mono font-bold tracking-widest mb-1.5 uppercase" style={{ color: T.purple }}>Amount (USDC)</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-3 text-white/50">$</span>
+                    <input type="number" step="0.1" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-black/40 border rounded-xl pl-8 pr-4 py-3 text-sm text-white focus:outline-none transition-colors" style={{ borderColor: "rgba(255,255,255,0.1)" }} />
+                  </div>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-5 pr-2 custom-scrollbar">
-                {logs.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center opacity-10 space-y-4">
-                    <p className="text-[9px] uppercase tracking-[0.8em]">System Idle</p>
-                  </div>
-                ) : (
-                  logs.map((log, i) => (
-                    <div key={i} className="flex gap-4">
-                      <span className="text-primary/40 text-[9px] font-bold mt-1">[{i + 1}]</span>
-                      <div className="text-[11px] leading-relaxed text-foreground/80">
-                        <DecryptedText
-                          text={log}
-                          speed={50}
-                          className={log.includes("✓") ? "text-green-400 font-bold" : ""}
-                        />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+              {/* ACTION BUTTON */}
+              <button
+                onClick={handleRunPayment}
+                disabled={running}
+                className="w-full mt-6 py-3.5 rounded-xl font-bold text-black transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-xl"
+                style={{ background: `linear-gradient(135deg, ${T.primary}, ${T.purple})`, boxShadow: `0 8px 25px -5px ${T.primary}50` }}
+              >
+                {running ? (
+                  <><span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> Executing Proof...</>
+                ) : done ? "▶ Run Another Payment" : "▶ Pay Privately"}
+              </button>
+            </motion.div>
+
+          </motion.div>
+        </section>
+
+        {/* ── Demo / Terminal Section ────────────────────────────────── */}
+        <section ref={demoRef as React.RefObject<HTMLElement>} className="max-w-5xl mx-auto px-6 py-20">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-bold tracking-tight text-white mb-2">Live Proof Execution</h2>
+            <p style={{ color: T.muted }}>Watch the ZK pipeline and Smart Contract execution below.</p>
           </div>
+          <TerminalLog logs={logs} running={running} txHash={txHash} />
 
-        </div>
+          {/* Munculkan Receipt jika sukses */}
+          <AnimatePresence>
+            {done && txHash && (
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mt-10 flex justify-center relative z-30">
+                <SuccessReceipt txHash={txHash} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
 
-        <footer className="mt-20 text-center opacity-20 text-[8px] tracking-[0.5em] font-bold uppercase">
-          Prototyping Privacy on Stellar Soroban 2026
+        {/* ── Footer ───────────────────────────────────────────────── */}
+        <footer className="mt-20 py-10 px-6 backdrop-blur-md" style={{ borderTop: `1px solid ${T.border}`, background: `${T.dark}50` }}>
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-5 text-center sm:text-left">
+            <div className="flex items-center gap-2.5">
+              <div className="w-5 h-5 rounded-md" style={{ background: `linear-gradient(135deg, ${T.primary}, ${T.purple})` }} />
+              <span className="font-semibold text-sm text-white">Fluppy</span>
+            </div>
+            <p className="text-sm" style={{ color: T.muted }}>
+              Built on Stellar + Soroban. ZK privacy for everyone.
+            </p>
+          </div>
         </footer>
 
-      </main>
+      </div>
     </div>
   );
 }
