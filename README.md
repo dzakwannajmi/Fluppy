@@ -100,7 +100,7 @@ git clone https://github.com/dzakwannajmi/Fluppy.git
 cd fluppy
 
 npm install
-soroban contract build
+stellar contract build
 ```
 
 ---
