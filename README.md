@@ -1,4 +1,3 @@
-````markdown
 # 🚀 Fluppy Protocol
 
 Fluppy is a decentralized, non-custodial privacy payment gateway built on **Stellar Soroban**.  
@@ -69,17 +68,17 @@ By forcing the first byte of the recipient hash to `0` across both TypeScript an
 ├── scripts/              # CLI tools (ZK proof & test payments)
 ├── src/lib/              # Core TS logic (ZKP, Soroban XDR mapping)
 └── Makefile              # Build, test, and dev orchestration
-````
+```
 
 ---
 
 ## 🚀 Live Verification (Stellar Testnet)
 
-* **Smart Contract ID**
+- **Smart Contract ID**  
   `CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG`
 
-* **Verified ZK Payment (Tx Hash)**
-  [https://stellar.expert/explorer/testnet/tx/8cf2dccc38f490a12b6bdcf20bebbf479d5c7b04b251401ad858758737601405](https://stellar.expert/explorer/testnet/tx/8cf2dccc38f490a12b6bdcf20bebbf479d5c7b04b251401ad858758737601405)
+- **Verified ZK Payment (Tx Hash)**  
+  https://stellar.expert/explorer/testnet/tx/8cf2dccc38f490a12b6bdcf20bebbf479d5c7b04b251401ad858758737601405
 
 > Open the **Events tab** on Stellar Expert to view audit logs (Nullifier, Merchant Receive, Protocol Fee).
 
@@ -88,10 +87,9 @@ By forcing the first byte of the recipient hash to `0` across both TypeScript an
 ## 📦 Getting Started
 
 ### Prerequisites
-
-* Node.js (v18+)
-* Rust + `stellar-cli`
-* Freighter Wallet (browser extension)
+- Node.js (v18+)
+- Rust + `stellar-cli`
+- Freighter Wallet (browser extension)
 
 ---
 
@@ -109,9 +107,8 @@ soroban contract build
 
 ### 2. Add USDC Trustline
 
-1. Open [https://stellar.expert/explorer/testnet](https://stellar.expert/explorer/testnet)
+1. Open https://stellar.expert/explorer/testnet  
 2. Search Contract ID:
-
    ```
    CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
    ```
@@ -141,7 +138,6 @@ npx tsx script/test-payment.ts
 ```
 
 **Output:**
-
 ```text
 🛠️ Generating Proof...
 🧮 Computing hash...
@@ -160,40 +156,36 @@ npm run dev
 ```
 
 Steps:
-
-1. Open [http://localhost:3000](http://localhost:3000)
-2. Connect Freighter Wallet
+1. Open http://localhost:3000  
+2. Connect Freighter Wallet  
 3. Input:
-
-   * NIM (e.g., 2410010454)
-   * Destination Address
-   * Amount
-4. Execute transaction with real-time ZK proof generation
+   - NIM (e.g., 2410010454)
+   - Destination Address
+   - Amount  
+4. Execute transaction with real-time ZK proof generation  
 
 ---
 
 ## 🛠 Developer Experience (DX)
 
-| Command      | Description                    |
-| ------------ | ------------------------------ |
+| Command | Description |
+|--------|------------|
 | `make setup` | Setup dependencies & toolchain |
-| `make test`  | Run smart contract tests       |
-| `make build` | Compile optimized WASM         |
-| `make fmt`   | Format Rust code               |
+| `make test` | Run smart contract tests |
+| `make build` | Compile optimized WASM |
+| `make fmt` | Format Rust code |
 
 ---
 
 ## 🧩 Tech Stack
 
-* **Smart Contracts:** Rust, Soroban SDK
-* **ZK Stack:** Circom 2.1, SnarkJS, Groth16, Poseidon2, BN254
-* **Frontend:** Next.js 14, Tailwind CSS, Framer Motion, ReactBits
-* **Wallet:** @stellar/freighter-api v3
+- **Smart Contracts:** Rust, Soroban SDK  
+- **ZK Stack:** Circom 2.1, SnarkJS, Groth16, Poseidon2, BN254  
+- **Frontend:** Next.js 14, Tailwind CSS, Framer Motion, ReactBits  
+- **Wallet:** @stellar/freighter-api v3  
 
 ---
 
 ## 📜 License
 
 MIT License — open-source privacy infrastructure for global finance.
-
-```
