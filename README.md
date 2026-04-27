@@ -61,13 +61,17 @@ By forcing the first byte of the recipient hash to `0` across both TypeScript an
 ## 📂 Folder Structure
 
 ```text
-├── app/                  # Next.js 14 Frontend (UI & API routes for ZK)
-├── components/           # Reusable UI components (ReactBits, Tailwind, Motion)
-├── contracts/            # Rust Smart Contracts (Soroban verifier & SAC integration)
 ├── circuits/             # Circom ZK circuits (Merkle Tree & Groth16 logic)
-├── scripts/              # CLI tools (ZK proof & test payments)
-├── src/lib/              # Core TS logic (ZKP, Soroban XDR mapping)
-└── Makefile              # Build, test, and dev orchestration
+├── contracts/            # Rust Smart Contracts (Soroban BN254 Verifier & SAC integration)
+├── public/               # Static frontend assets
+├── script/               # CLI tooling (e.g., test-payment.ts for testing ZK payloads locally)
+├── src/                  
+│   ├── app/              # Next.js 14 App Router (UI pages & Next.js API Routes for ZK)
+│   ├── components/       # Reusable UI components (ReactBits, Tailwind, Framer Motion)
+│   ├── hooks/            # Custom React hooks (e.g., Freighter wallet integration)
+│   ├── lib/              # Core TS logic (Soroban XDR mapping, ZKP generation)
+│   └── types/            # TypeScript definitions for ZK and Stellar payloads
+└── Makefile              # Global orchestrator for building, testing, and formatting
 ```
 
 ---
