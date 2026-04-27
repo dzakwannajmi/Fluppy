@@ -1,5 +1,6 @@
 {
   "name": "frontend",
+  "type": "module",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -13,8 +14,10 @@
     "@stellar/stellar-sdk": "^15.0.1",
     "@types/three": "^0.183.1",
     "buffer": "^6.0.3",
+    "circomlibjs": "^0.1.7",
     "clsx": "^2.1.1",
     "crypto-js": "^4.2.0",
+    "dotenv": "^17.4.2",
     "framer-motion": "^12.38.0",
     "gsap": "^3.15.0",
     "lucide-react": "^1.8.0",
@@ -25,6 +28,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hot-toast": "^2.6.0",
+    "snarkjs": "^0.7.6",
     "tailwind-merge": "^3.5.0",
     "three": "^0.183.2"
   },

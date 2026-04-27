@@ -6,138 +6,139 @@ import {
   TransactionBuilder,
   Account,
   xdr,
+  Keypair,
+  nativeToScVal,
 } from "@stellar/stellar-sdk";
-import { isConnected, requestAccess, signTransaction } from "@stellar/freighter-api";
 import { Buffer } from "buffer";
-import { generatePaymentProof, PaymentProofInputs } from "./zkp";
-import { nativeToScVal } from '@stellar/stellar-sdk';
 
 /**
- * Stellar Infrastructure Configuration
+ * CONFIGURATION
+ * Gunakan fungsi agar evaluasi variabel dilakukan saat fungsi dipanggil, 
+ * bukan hanya sekali saat file di-load.
  */
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://soroban-testnet.stellar.org:443";
-export const rpcServer = new rpc.Server(RPC_URL);
-export const NETWORK_PASSPHRASE = Networks.TESTNET;
-export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID!;
+const getRpcUrl = () => process.env.NEXT_PUBLIC_RPC_URL || "https://soroban-testnet.stellar.org:443";
+const getNetworkPassphrase = () => process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE || Networks.TESTNET;
+
+// Kita biarkan ini sebagai export, tapi beri fallback atau check di dalam fungsi
+export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID;
 
 /**
- * Helper: Mengubah Hex String dari SnarkJS menjadi xdr.ScVal (BytesN)
+ * Helper: Convert Hex String to Soroban ScVal (Bytes/BytesN)
  */
-const hexToBytesN = (hexStr: string) => {
+const hexToScVal = (hexStr: string) => {
   return xdr.ScVal.scvBytes(Buffer.from(hexStr, "hex"));
 };
 
-/**
- * payWithZk
- * * ATOMIC SETTLEMENT LOGIC:
- * Men-generate bukti ZK di sisi klien, lalu memetakannya secara deterministik
- * ke format BytesN untuk diverifikasi oleh fungsi Protocol 25 di Soroban.
- */
-export const payWithZk = async (to: string, amount: bigint, inputs: PaymentProofInputs) => {
-  if (!(await isConnected())) throw new Error("Freighter wallet not found.");
+export const payWithZk = async (merchant: string, amount: bigint, proof: any) => {
+  // --- VALIDASI CONTRACT ID ---
+  const currentContractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  console.log("🔍 [Debug] Using Contract ID:", currentContractId);
 
-  // 1. Get User Address & Account Sequence
-  const { address: from } = await requestAccess();
-  if (!from) throw new Error("User rejected access.");
+  if (!currentContractId) {
+    throw new Error("NEXT_PUBLIC_CONTRACT_ID is not defined. Check your .env file.");
+  }
 
-  const accountResponse = await rpcServer.getAccount(from);
+  const rpcServer = new rpc.Server(getRpcUrl());
+  const networkPassphrase = getNetworkPassphrase();
+  
+  let senderAddress: string;
+  let isBrowser = typeof window !== "undefined";
+
+  // 1. Identify Sender & Auth Method
+  if (isBrowser) {
+    const { isConnected, requestAccess } = await import("@stellar/freighter-api");
+    if (!(await isConnected())) throw new Error("Freighter wallet not found.");
+    const { address } = await requestAccess();
+    if (!address) throw new Error("User rejected access.");
+    senderAddress = address;
+  } else {
+    if (!process.env.SENDER_SECRET) throw new Error("SENDER_SECRET missing in .env");
+    const sourceKeypair = Keypair.fromSecret(process.env.SENDER_SECRET);
+    senderAddress = sourceKeypair.publicKey();
+  }
+
+  const accountResponse = await rpcServer.getAccount(senderAddress);
 
   /**
-   * STEP 2: ZK-PROOF GENERATION (Client-Side)
+   * STEP 2: XDR MAPPING
    */
-  console.log("🛠️ [ZKP] Generating Groth16 Proof locally...");
-  const proof = await generatePaymentProof(
-    inputs,
-    "/circuit/fluppy_payment.wasm",
-    "/circuit/circuit_final.zkey"
+  console.log("🔄 [Stellar] Mapping ZK Payload to Soroban XDR...");
+
+  const publicInputsVec = xdr.ScVal.scvVec(
+    proof.publicSignals.map((sig: string) => hexToScVal(sig))
   );
 
-  /**
-   * STEP 3: XDR MAPPING (Deterministic BytesN mapping)
-   * Menyusun argumen secara ketat sesuai dengan urutan fungsi di `lib.rs`:
-   * pay_with_zk(env, from, to, amount, pi_a, pi_b, pi_c, nullifier, merkle_root, recipient_hash, min_amount, max_amount)
-   */
-  console.log("🔄 [Stellar] Mapping ZK Points to Soroban XDR...");
-  
+  // Gunakan nativeToScVal untuk address agar lebih aman dari error "Unsupported address type"
   const contractArgs = [
-    new Address(from).toScVal(),                                // 1. from
-    new Address(to).toScVal(),                                  // 2. to
-    nativeToScVal(amount, { type: "i128" }),                    // 3. amount
-    hexToBytesN(proof.pi_a),                                    // 4. pi_a (64 bytes)
-    hexToBytesN(proof.pi_b),                                    // 5. pi_b (128 bytes)
-    hexToBytesN(proof.pi_c),                                    // 6. pi_c (64 bytes)
-    hexToBytesN(proof.publicSignals[0]),                        // 7. nullifier
-    hexToBytesN(proof.publicSignals[2]),                        // 8. merkle_root (Index 2)
-    hexToBytesN(proof.publicSignals[3]),                        // 9. recipient_hash
-    hexToBytesN(proof.publicSignals[4]),                        // 10. min_amount
-    hexToBytesN(proof.publicSignals[5]),                        // 11. max_amount
+    nativeToScVal(senderAddress, { type: "address" }), // 1. sender
+    nativeToScVal(merchant, { type: "address" }),      // 2. merchant
+    nativeToScVal(amount, { type: "i128" }),           // 3. amount
+    hexToScVal(proof.pi_a),                            // 4. pi_a
+    hexToScVal(proof.pi_b),                            // 5. pi_b
+    hexToScVal(proof.pi_c),                            // 6. pi_c
+    publicInputsVec,                                   // 7. public_inputs
   ];
 
-  // 3b. Build Transaction
-  const contract = new Contract(CONTRACT_ID);
-
+  // 3. Build Transaction
+  const contract = new Contract(currentContractId);
   const tx = new TransactionBuilder(
-    new Account(from, accountResponse.sequenceNumber()),
+    new Account(senderAddress, accountResponse.sequenceNumber()),
     {
-      fee: "100000", // Sedikit dinaikkan karena transaksi ZK butuh lebih banyak byte
-      networkPassphrase: NETWORK_PASSPHRASE
+      fee: "100000",
+      networkPassphrase: networkPassphrase
     }
   )
-    .addOperation(
-      contract.call("pay_with_zk", ...contractArgs)
-    )
+    .addOperation(contract.call("execute_payment", ...contractArgs))
     .setTimeout(30)
     .build();
 
   /**
-   * STEP 4: SIMULATION & SIGNING
+   * STEP 4: PREPARE & SIGN
    */
   console.log("⚙️ [Stellar] Simulating transaction...");
   const preparedTx = await rpcServer.prepareTransaction(tx);
 
-  console.log("✍️ [Stellar] Awaiting Freighter signature...");
-  const signResult = await signTransaction(preparedTx.toXDR(), {
-    networkPassphrase: NETWORK_PASSPHRASE
-  });
-
-  if (signResult.error) throw new Error(signResult.error);
+  let signedTx;
+  if (isBrowser) {
+    const { signTransaction } = await import("@stellar/freighter-api");
+    console.log("✍️ [Stellar] Awaiting Freighter signature...");
+    const signResult = await signTransaction(preparedTx.toXDR(), {
+      networkPassphrase: networkPassphrase
+    });
+    if (signResult.error) throw new Error(signResult.error);
+    signedTx = TransactionBuilder.fromXDR(signResult.signedTxXdr, networkPassphrase);
+  } else {
+    const sourceKeypair = Keypair.fromSecret(process.env.SENDER_SECRET!);
+    preparedTx.sign(sourceKeypair);
+    signedTx = preparedTx;
+  }
 
   /**
    * STEP 5: SUBMISSION
    */
-  console.log("🚀 Submitting to Network...");
-  const submission = await rpcServer.sendTransaction(
-    TransactionBuilder.fromXDR(signResult.signedTxXdr, NETWORK_PASSPHRASE)
-  );
+  console.log("🚀 Submitting to Testnet...");
+  const submission = await rpcServer.sendTransaction(signedTx);
 
   if (submission.status === "ERROR") {
-    console.error("Submission Error:", submission);
-    throw new Error("RPC Submission Failed. Cek parameter XDR.");
+    // Mencoba mengambil detail error dari hasil simulasi jika ada
+    throw new Error(`RPC Submission Failed: ${JSON.stringify(submission.errorResult || submission)}`);
   }
 
-  return await pollTransaction(submission.hash);
+  return await pollTransaction(submission.hash, rpcServer);
 };
 
-/**
- * pollTransaction
- * Monitors the transaction status until it's finalized in the ledger.
- */
-export const pollTransaction = async (hash: string) => {
+export const pollTransaction = async (hash: string, server: rpc.Server) => {
   let status = "PENDING";
   let txStatus: any;
 
   while (status === "PENDING" || status === "NOT_FOUND") {
-    txStatus = await rpcServer.getTransaction(hash);
+    txStatus = await server.getTransaction(hash);
     status = txStatus.status;
-
     if (status === "SUCCESS") return txStatus;
-
     if (status === "FAILED") {
-      console.error("TX Failure Metadata:", txStatus.resultMetaXdr || txStatus.resultXdr);
-      throw new Error("Transaction rejected by Soroban VM.");
+        console.log("❌ Transaction Result XDR:", txStatus.resultXdr);
+        throw new Error("Transaction rejected by Soroban VM. Check contract constraints.");
     }
-
-    // 2-second delay to avoid rate-limiting
     await new Promise((r) => setTimeout(r, 2000));
   }
   return txStatus;

@@ -1,12 +1,4 @@
 // src/hooks/useFluppy.ts
-// SCF AUDIT: FULLY INTEGRATED WITH ZKP.TS (Soroban Protocol 25)
-// CHANGES MADE:
-// 1. Added 'use client' → ensures hook never runs on server
-// 2. Confirmed correct call to generateZkProof(secretId, WHITELIST)
-// 3. Added extra safety validation for nimSecret (double protection)
-// 4. Improved logging & error handling for better audit trail
-// 5. Kept your original WHITELIST + Freighter + payWithZk flow
-
 'use client';
 
 import { useState, useCallback } from "react";
@@ -14,21 +6,17 @@ import { requestAccess } from "@stellar/freighter-api";
 import { generateZkProof } from "../lib/zkp";
 import { parseContractError } from '../lib/errorMapper';
 import { toast } from 'react-hot-toast';
-import {
-    payWithZk
-} from "../lib/stellar";
+import { payWithZk } from "../lib/stellar";
 
 /**
  * AUTHORIZED WHITELIST (NIM List)
- * In production, fetch this from your backend/database.
- * Order MUST be consistent for the Merkle Tree to be valid.
+ * Order MUST be consistent with the Merkle Tree generated during setup.
  */
 const WHITELIST = [
     "2410010454",
     "2410010001",
     "2410010002",
     "2410010003",
-    // ... add more as needed
 ];
 
 export const useFluppy = () => {
@@ -52,15 +40,15 @@ export const useFluppy = () => {
                 addLog(`Wallet linked: ${access.address.slice(0, 6)}...${access.address.slice(-4)}`);
                 toast.success("Wallet Connected");
             }
-        } catch {
+        } catch (err) {
             addLog("ERR: Connection failed.");
-            toast.error("Connection failed.");
+            toast.error("Freighter connection failed.");
         }
     };
 
     /**
      * executePayment
-     * Fully integrated with updated generateZkProof(secretId, whitelist)
+     * Orchestrates: ZK Proof Generation -> Soroban Transaction
      */
     const executePayment = async (amount: string, hotelWallet: string, nimSecret: string) => {
         if (!walletAddress) {
@@ -68,10 +56,9 @@ export const useFluppy = () => {
             return;
         }
 
-        // SCF AUDIT: Extra safety check (double protection)
-        if (!nimSecret || typeof nimSecret !== 'string' || nimSecret.trim() === '') {
+        if (!nimSecret || nimSecret.trim() === '') {
             toast.error("NIM/Secret ID is required");
-            addLog("❌ ERROR: nimSecret is empty or undefined");
+            addLog("❌ ERROR: Identity secret is missing.");
             return;
         }
 
@@ -80,44 +67,50 @@ export const useFluppy = () => {
         setLogs([]);
 
         try {
-            addLog("System: Starting ZK-Privacy Settlement...");
+            addLog("System: Starting Privacy-Preserving Settlement...");
 
             /**
              * STEP 1: ZK Proof Generation
-             * Now correctly passes BOTH parameters to match zkp.ts signature
+             * We pass 'hotelWallet' to generateZkProof so it can compute the 
+             * recipientHash (public signal) required by the circuit & contract.
              */
-            addLog("ZKP: Computing Poseidon-based Merkle Path (Depth 10)...");
+            addLog("ZKP: Initiating SnarkJS Groth16 worker...");
+            addLog("ZKP: Computing Merkle Witness for identity...");
 
-            // ✅ INTEGRATED CALL - matches new zkp.ts exactly
-            const zkProof = await generateZkProof(nimSecret, WHITELIST);
+            // Pass hotelWallet as the 3rd argument for recipient integrity
+            const zkProof = await generateZkProof(nimSecret, WHITELIST, hotelWallet);
 
-            addLog("ZKP: Verifier payload prepared successfully (Merkle root + BN254 points).");
+            addLog("ZKP: Proof generated. Nullifier & Roots extracted.");
 
+            // Convert amount to Stroops (7 decimals for USDC)
             const rawAmount = BigInt(Math.floor(parseFloat(amount) * 10_000_000));
-            addLog(`Finance: Scaling amount to ${rawAmount} stroops...`);
+            addLog(`Finance: Scaling amount to ${rawAmount} stroops (USDC:7).`);
 
             /**
              * STEP 2: Submit to Stellar Soroban Contract
              */
-            addLog("Stellar: Requesting signature via Freighter...");
-            toast.loading("Awaiting Signature...", { id: "tx-process" });
+            addLog("Stellar: Preparing XDR for Contract ID: " + process.env.NEXT_PUBLIC_CONTRACT_ID?.slice(0, 8) + "...");
+            toast.loading("Awaiting Freighter Signature...", { id: "tx-process" });
 
+            // The 'payWithZk' function should use process.env internally
             const finalResult = await payWithZk(hotelWallet, rawAmount, zkProof) as any;
 
-            if (finalResult && finalResult.status === "SUCCESS") {
-                // Gunakan .txHash atau .hash (tergantung versi SDK, biasanya txHash)
+            if (finalResult && (finalResult.status === "SUCCESS" || finalResult.status === "txSuccess")) {
                 const hashToDisplay = finalResult.txHash || finalResult.hash;
-
                 setTxHash(hashToDisplay);
-                addLog(`✓ SUCCESS: Tx Hash [${hashToDisplay.slice(0, 10)}]...`);
+                addLog(`✓ SUCCESS: Transaction Confirmed on Testnet.`);
+                addLog(`Hash: ${hashToDisplay}`);
                 toast.success("ZK Payment Successful!", { id: "tx-process" });
+            } else {
+                throw new Error(finalResult?.status || "Unknown transaction error");
             }
 
         } catch (err: unknown) {
+            // Error mapping from Contract Error Codes (like #6) to human-readable text
             const friendlyMessage = parseContractError(err);
             addLog(`❌ ABORTED: ${friendlyMessage}`);
             toast.error(friendlyMessage, { id: "tx-process" });
-            console.error("Full error for audit:", err);
+            console.error("Audit Trail:", err);
         } finally {
             setLoading(false);
         }
