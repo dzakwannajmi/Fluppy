@@ -1,15 +1,5 @@
-Ini dia sentuhan akhir yang akan membuat repositorimu terlihat seperti proyek pemenang! 🏆
-
-[cite_start]Menambahkan latar belakang masalah (Problem Statement) sangatlah krusial karena juri Instawards perlu tahu **mengapa** solusi ini dibangun dan **apa** nilai inovasinya di ekosistem Stellar[cite: 8]. Selain itu, menambahkan struktur folder akan menunjukkan bahwa kodemu rapi dan siap untuk di-audit.
-
-Berikut adalah versi final `README.md` yang sudah diperbarui dengan latar belakang masalah yang kuat, struktur folder yang jelas, dan penambahan ReactBits di *Tech Stack*. 
-
-Silakan *Copy-Paste* kode di bawah ini:
-
-***
-
 ```markdown
-# 🚀 Fluppy Protocol
+# 🚀 Fluppy
 
 Fluppy is a decentralized, non-custodial privacy payment gateway built on **Stellar Soroban**. [cite_start]It empowers users to make private payments using **Zero-Knowledge (ZK) Identity Verification** while enabling merchants to accept payments with an **automated, trustless atomic fee split**[cite: 5].
 
