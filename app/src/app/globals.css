@@ -10,7 +10,6 @@
   --background: #FDFCFD;
   --foreground: #171717;
 
-  /* Brand Fluppy Colors */
   --primary: #FF85BB;
   --primary-foreground: #FFFFFF;
   --accent-purple: #B497CF;
@@ -21,21 +20,23 @@
   --input: #F8FAFC;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-accent: var(--accent-purple);
-  --color-glow: var(--glow-dark);
 
-  --color-card: var(--card);
-  --color-card-border: var(--card-border);
-  --color-input: var(--input);
+/* Logo Loop */
+.icon-mask {
+  display: inline-block;
+  background-color: rgba(255, 255, 255, 0.5);
+  transition: all 0.3s ease;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-pixel-square: var(--font-geist-pixel-square);
+.icon-mask:hover {
+  background-color: #FF85BB; 
+  transform: scale(1.1);
 }
 
 @media (prefers-color-scheme: dark) {

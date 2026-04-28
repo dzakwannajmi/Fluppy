@@ -158,7 +158,6 @@ const CardNav: React.FC<CardNavProps> = ({
                         <div className={`hamburger-line w-[24px] h-[2px] bg-current transition-[transform,opacity,margin] duration-300 ease-linear [transform-origin:50%_50%] ${isHamburgerOpen ? '-translate-y-[4px] -rotate-45' : ''} group-hover:opacity-75`} />
                     </div>
 
-                    {/* 👇 Logo Fluppy + Ikon Kotak Pink 👇 */}
                     <div className="logo-container flex items-center gap-2.5 md:absolute md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 order-1 md:order-none pointer-events-none">
                         <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: "#FF85BB" }}>
                             <BsStars className="text-black text-sm" />
@@ -171,7 +170,6 @@ const CardNav: React.FC<CardNavProps> = ({
                         onClick={onConnectWallet}
                         className="hidden md:inline-flex px-5 py-2 rounded-xl text-sm font-bold border transition-all hover:scale-105 active:scale-95 z-[60] items-center gap-2"
                         style={{
-                            // Efek Glassmorphism Disesuaikan dengan tema Pink #FF85BB
                             backgroundColor: publicKey ? `rgba(255, 133, 187, 0.15)` : `rgba(255, 255, 255, 0.05)`,
                             backdropFilter: "blur(12px)",
                             WebkitBackdropFilter: "blur(12px)",

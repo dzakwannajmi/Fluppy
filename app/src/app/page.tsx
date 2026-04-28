@@ -3,41 +3,40 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useInView, Variants } from "framer-motion";
 
-// 👇 IMPORT REACT ICONS 👇
-import { 
-  FiArrowDown, 
-  FiGithub, 
-  FiChevronDown, 
-  FiSettings, 
-  FiLock, 
-  FiPackage, 
-  FiSend, 
-  FiLink, 
-  FiDollarSign, 
-  FiCheckCircle, 
-  FiXCircle, 
-  FiKey, 
-  FiShield,
-  FiRefreshCw
+import {
+  FiArrowDown,
+  FiGithub,
+  FiChevronDown,
+  FiSettings,
+  FiLock,
+  FiPackage,
+  FiSend,
+  FiLink,
+  FiDollarSign,
+  FiCheckCircle,
+  FiXCircle,
+  FiKey,
 } from "react-icons/fi";
 import { BsStars, BsCalculator } from "react-icons/bs";
-
 import { isConnected, requestAccess } from "@stellar/freighter-api";
 
 // Import Komponen Custom
 import ColorBends from "../components/ColorBends";
 import DotField from "../components/DotField";
-import Navbar from "../components/Navbar"; 
+import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import LogoLoop from "../components/LogoLoop";
+
+import Link from "next/link";
 
 // ─── Design tokens (SOLID PINK THEME) ─────────────────────────────────────────
 const T = {
   bg: "#120F17",
   fg: "#FDFCFD",
   muted: "#94a3b8",
-  primary: "#FF85BB", 
+  primary: "#FF85BB",
   dark: "#0A080D",
-  card: "#18151E", 
+  card: "#18151E",
   border: "rgba(255,255,255,0.08)",
   glass: "rgba(20, 16, 25, 0.6)",
 };
@@ -78,7 +77,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Menggantikan GradientText menjadi Solid Pink Text
 function HighlightText({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <span className={className} style={{ color: T.primary }}>
@@ -96,57 +94,7 @@ function SolidCard({ children, className = "" }: { children: React.ReactNode; cl
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  TerminalLog Component
-// ═════════════════════════════════════════════════════════════════════════════
-function TerminalLog({ logs, running, txHash }: { logs: LogEntry[]; running: boolean; txHash?: string | null }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs]);
-
-  const hasDone = logs.some((l) => l.kind === "success");
-  const hasError = logs.some((l) => l.kind === "error");
-
-  return (
-    <div className="h-full w-full rounded-[2rem] overflow-hidden flex flex-col relative z-20" style={{ background: `${T.dark}`, border: `1px solid ${T.border}`, boxShadow: `inset 0 0 40px -20px ${T.primary}20`, minHeight: 450 }}>
-      <div className="flex items-center gap-2 px-6 py-4" style={{ borderBottom: `1px solid ${T.border}` }}>
-        <span className="w-3 h-3 rounded-full bg-red-500/80" />
-        <span className="w-3 h-3 rounded-full bg-yellow-400/80" />
-        <span className="w-3 h-3 rounded-full bg-green-400/80" />
-        <span className="ml-4 text-xs tracking-widest select-none uppercase font-mono flex items-center gap-2" style={{ color: "rgba(255,255,255,0.4)" }}>
-          <FiSettings size={12} className="animate-[spin_4s_linear_infinite]" /> Soroban Shell
-        </span>
-      </div>
-
-      <div className="flex-1 px-6 py-6 overflow-y-auto space-y-3 text-sm font-mono">
-        {logs.length === 0 && !running && <p className="text-xs select-none" style={{ color: "rgba(255,255,255,0.3)" }}>Awaiting execution…</p>}
-        <AnimatePresence>
-          {logs.map((log) => (
-            <motion.div key={log.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="flex items-start gap-3 leading-relaxed" style={{ color: log.kind === "success" ? "#4ade80" : log.kind === "error" ? "#f87171" : "rgba(255,255,255,0.8)" }}>
-              <span className="flex-shrink-0 text-base leading-none mt-[2px]">{log.icon}</span>
-              <span>{log.text}</span>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-        {running && <motion.span animate={{ opacity: [1, 0] }} transition={{ repeat: Infinity, duration: 0.65 }} className="inline-block w-2 h-[18px] align-middle" style={{ background: T.primary, borderRadius: 1 }} />}
-        <div ref={bottomRef} />
-      </div>
-
-      <div className="px-6 py-4 flex items-center gap-3" style={{ borderTop: `1px solid ${T.border}` }}>
-        {running ? (
-          <><motion.span animate={{ opacity: [1, 0.25] }} transition={{ repeat: Infinity, duration: 0.9 }} className="w-2 h-2 rounded-full" style={{ background: T.primary }} /><span className="text-xs" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.5)" }}>executing…</span></>
-        ) : hasDone && txHash ? (
-          <><span className="w-2 h-2 rounded-full bg-green-400" /><span className="text-xs" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.5)" }}>exit 0 · verified</span><a href={`https://stellar.expert/explorer/testnet/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs underline underline-offset-2" style={{ fontFamily: "monospace", color: T.primary }}>Explorer →</a></>
-        ) : hasError ? (
-          <><span className="w-2 h-2 rounded-full bg-red-400" /><span className="text-xs" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.5)" }}>exit 1 · check logs</span></>
-        ) : (
-          <span className="text-xs select-none" style={{ fontFamily: "monospace", color: "rgba(255,255,255,0.3)" }}>ready</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  ARCHITECTURE
+//  ARCHITECTURE SECTION
 // ═════════════════════════════════════════════════════════════════════════════
 const ARCH_NODES = [
   { label: "ZKP Generation", sub: "Client-side Poseidon Merkle proof", glyph: "01" },
@@ -162,7 +110,7 @@ function Architecture() {
         <Reveal>
           <SectionLabel>ARCHITECTURE</SectionLabel>
           <motion.h2 variants={fadeUp} className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-12">
-            Four steps. <HighlightText>One transaction.</HighlightText>
+            Four steps <HighlightText>One transaction</HighlightText>
           </motion.h2>
 
           <motion.div variants={stagger(0.1)} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -183,21 +131,17 @@ function Architecture() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  HERO
+//  HERO SECTION
 // ═════════════════════════════════════════════════════════════════════════════
 function Hero() {
   return (
     <section className="relative pt-32 md:pt-40 pb-28 px-6">
       <div className="max-w-5xl mx-auto text-center">
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.6 }} className="inline-flex items-center gap-3 px-5 py-2 rounded-full border mb-9" style={{ borderColor: T.border, background: T.glass }}>
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-xs font-semibold text-white/80">Live on Stellar Testnet</span>
-        </motion.div>
 
         <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.7 }} className="text-5xl sm:text-7xl md:text-[7rem] font-bold tracking-tighter text-white leading-[1.05]">
-          Private Payments,
+          Private
           <br />
-          <HighlightText>Finally.</HighlightText>
+          <HighlightText>Payments</HighlightText>
         </motion.h1>
 
         <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, duration: 0.7 }} className="mt-9 text-lg md:text-xl text-foreground/60 max-w-2xl mx-auto leading-relaxed">
@@ -226,11 +170,11 @@ function Hero() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  WHAT IS FLUPPY
+//  WHAT IS FLUPPY SECTION
 // ═════════════════════════════════════════════════════════════════════════════
 const FEATURES = [
-  { title: "Dynamic Zero-Knowledge", desc: "Prove membership in a whitelist without revealing identity. Poseidon-based Merkle proofs at depth 10." },
-  { title: "On-chain Verification", desc: "BN254 pairing checks executed natively via Stellar Soroban Protocol 25 host functions." },
+  { title: "Dynamic Zero-Knowledge", desc: "Prove membership in a whitelist without revealing identity." },
+  { title: "On-chain Verification", desc: "BN254 pairing checks executed natively via Stellar Protocol 25 host functions." },
   { title: "Atomic Settlement", desc: "Funds split atomically — 95% to merchant, 5% to treasury — in a single irreversible transaction." },
 ];
 
@@ -240,21 +184,18 @@ function WhatIsFluppy() {
       <div className="max-w-6xl mx-auto">
         <Reveal>
           <SolidCard className="overflow-hidden flex flex-col md:flex-row">
-            {/* Kiri: Panel Gelap */}
             <div className="md:w-1/3 p-10 flex flex-col justify-between" style={{ background: "#0a080d" }}>
               <div>
                 <div className="w-12 h-12 rounded-xl mb-6 flex items-center justify-center" style={{ background: T.primary }}>
                   <BsStars className="text-black text-2xl" />
                 </div>
                 <h2 className="text-3xl font-bold text-white tracking-tight leading-tight">
-                  Built for the<br /><HighlightText>privacy-first</HighlightText><br />economy.
+                  Built for the<br /><HighlightText>privacy-first</HighlightText><br />economy
                 </h2>
               </div>
-              <p className="mt-10 text-sm text-white/40 font-mono uppercase tracking-widest">
-                Stellar Protocol 25
-              </p>
             </div>
 
+            {/* Kanan: List Fitur */}
             <div className="md:w-2/3 p-10 sm:p-14 flex flex-col justify-center gap-8">
               {FEATURES.map((f, i) => (
                 <div key={f.title} className={`pb-8 ${i !== FEATURES.length - 1 ? 'border-b' : ''}`} style={{ borderColor: T.border }}>
@@ -273,13 +214,102 @@ function WhatIsFluppy() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  FAQ SECTION
+//  TECH STACK LOOP SECTION
+// ═════════════════════════════════════════════════════════════════════════════
+const techLogos = [
+  {
+    node: (
+      <div
+        className="icon-mask w-[120px] h-[40px]"
+        style={{
+          maskImage: 'url(/logos/Stellar.svg)',
+          WebkitMaskImage: 'url(/logos/Stellar.svg)'
+        }}
+      />
+    ),
+    title: "Stellar",
+    href: "https://stellar.org"
+  },
+  {
+    node: (
+      <div
+        className="icon-mask w-[120px] h-[60px]"
+        style={{
+          maskImage: 'url(/logos/SCF.svg)',
+          WebkitMaskImage: 'url(/logos/SCF.svg)'
+        }}
+      />
+    ),
+    title: "Stellar Community Fund",
+    href: "https://communityfund.stellar.org/"
+  },
+  {
+    node: (
+      <div
+        className="icon-mask w-[120px] h-[60px]"
+        style={{
+          maskImage: 'url(/logos/Rise-in.avif)',
+          WebkitMaskImage: 'url(/logos/Rise-in.avif)'
+        }}
+      />
+    ),
+    title: "Rise in",
+    href: "https://www.risein.com/"
+  },
+
+];
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  DAPP PREVIEW SECTION
+// ═════════════════════════════════════════════════════════════════════════════
+function DAppPreview() {
+  return (
+    <section id="payment-preview" className="py-24 relative z-10">
+      <div className="max-w-6xl mx-auto px-6">
+        <Reveal>
+          <div className="mb-10 text-center" id="payment">
+            <h2 className="text-4xl font-bold text-white mb-4">Experience the Protocol.</h2>
+            <p className="text-sm text-foreground/60 max-w-lg mx-auto">Try the Zero-Knowledge payment pipeline directly on testnet.</p>
+          </div>
+
+          <Link href="/app" className="block relative group cursor-pointer rounded-[2rem] overflow-hidden">
+
+            <div className="grid lg:grid-cols-2 gap-6 p-6 border rounded-[2rem] opacity-40 blur-[4px] group-hover:blur-md transition-all duration-500" style={{ background: T.card, borderColor: T.border }}>
+              {/* Dummy Form */}
+              <div className="space-y-6">
+                <div className="h-16 w-full rounded-xl bg-white/5 border border-white/10" />
+                <div className="h-16 w-full rounded-xl bg-white/5 border border-white/10" />
+                <div className="h-16 w-full rounded-xl bg-white/5 border border-white/10" />
+                <div className="h-14 w-full rounded-xl mt-10" style={{ background: T.primary }} />
+              </div>
+              <div className="h-full min-h-[300px] w-full rounded-[2rem] bg-black border border-white/10" />
+            </div>
+
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <div className="flex items-center gap-3 text-2xl md:text-3xl font-bold text-white mb-8">
+                #1 privacy payments on
+                <div className="icon-mask w40 h-40 md:w-30 md:h-30 bg-white" style={{ maskImage: 'url(/logos/Stellar.svg)', WebkitMaskImage: 'url(/logos/Stellar.svg)' }} />
+              </div>
+              <button className="px-8 py-4 bg-white text-black font-bold rounded-2xl flex items-center gap-2 hover:scale-105 transition-transform shadow-2xl">
+                <BsStars className="text-xl" /> Enter App
+              </button>
+            </div>
+
+          </Link>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  FAQ SECTION (Dengan Dropdown Animasi Halus)
 // ═════════════════════════════════════════════════════════════════════════════
 const FAQS = [
   { q: "What is Fluppy?", a: "Fluppy is a privacy-first payment gateway built on Stellar Soroban. It allows users to make payments while proving their eligibility (via ZK-SNARKs) without revealing their actual identity to the public ledger." },
   { q: "How does the 95/5 split work?", a: "Unlike traditional gateways that hold funds, Fluppy uses a Soroban Smart Contract to execute an atomic bifurcation. In a single ledger operation, 95% of the USDC goes to the merchant and 5% goes to the protocol treasury." },
   { q: "Do I need a specific wallet?", a: "Yes, currently Fluppy is deeply integrated with the Freighter Wallet extension. You must have Freighter installed and set to the Stellar Testnet." },
-  { q: "What is Soroban Protocol 25?", a: "Protocol 25 (also known as CAP-0074) introduces native BN254 host functions to Soroban. This allows complex Zero-Knowledge Proofs to be verified efficiently directly on-chain." },
+  { q: "What is Stellar Protocol 25?", a: "Protocol 25 introduces native BN254 host functions to Soroban. This allows complex Zero-Knowledge Proofs to be verified efficiently directly on-chain." },
 ];
 
 function FAQItem({ q, a, isOpen, onClick }: { q: string, a: string, isOpen: boolean, onClick: () => void }) {
@@ -293,7 +323,13 @@ function FAQItem({ q, a, isOpen, onClick }: { q: string, a: string, isOpen: bool
       </button>
       <AnimatePresence>
         {isOpen && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: "easeInOut" }} className="overflow-hidden">
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
             <div className="pb-6 text-sm text-foreground/60 leading-relaxed pr-8">
               {a}
             </div>
@@ -305,20 +341,46 @@ function FAQItem({ q, a, isOpen, onClick }: { q: string, a: string, isOpen: bool
 }
 
 function FAQSection() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0); 
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
     <section className="relative py-24 px-6 z-10">
       <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-12">
         <div className="md:w-1/3">
           <SectionLabel>FAQ</SectionLabel>
-          <h2 className="text-4xl font-bold text-white tracking-tight">Questions?<br />Answers.</h2>
+          <h2 className="text-4xl font-bold text-white tracking-tight">Questions?<br />Answers</h2>
         </div>
         <div className="md:w-2/3">
           {FAQS.map((faq, i) => (
             <FAQItem key={i} q={faq.q} a={faq.a} isOpen={openIndex === i} onClick={() => setOpenIndex(openIndex === i ? null : i)} />
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function TechStackLoop() {
+  return (
+    <section className="relative w-full z-10 pt-16 pb-12" style={{ borderTop: `1px solid ${T.border}` }}>
+      <div className="max-w-6xl mx-auto px-6 text-center mb-6">
+        <span className="text-[17px] font-bold tracking-[0.2em] uppercase" style={{ color: T.fg }}>
+          POWERED BY
+        </span>
+      </div>
+      <div style={{ height: '80px', position: 'relative', overflow: 'hidden' }}>
+        <LogoLoop
+          logos={techLogos}
+          speed={120}
+          direction="left"
+          logoHeight={40}
+          gap={80}
+          hoverSpeed={30}
+          scaleOnHover
+          fadeOut
+          fadeOutColor={T.bg}
+          ariaLabel="Technology Stack"
+        />
       </div>
     </section>
   );
@@ -419,7 +481,8 @@ export default function Page() {
 
   return (
     <div className="relative min-h-screen antialiased overflow-x-hidden" style={{ background: T.bg, color: T.fg }}>
-      
+
+      {/* HERO BACKGROUND LAYER */}
       <div className="absolute top-0 left-0 w-full h-[120vh] pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
         <div className="absolute inset-0 opacity-40 mix-blend-screen">
           <ColorBends colors={[T.primary]} rotation={90} speed={0.2} scale={1} frequency={1} warpStrength={1} mouseInfluence={1} noise={0.15} parallax={0.5} iterations={1} intensity={1.5} bandWidth={6} transparent autoRotate={0} />
@@ -431,59 +494,25 @@ export default function Page() {
       <div className="relative z-10">
         <Navbar publicKey={publicKey} onConnectWallet={handleConnectWallet} items={navItems} baseColor="rgba(18, 15, 23, 0.4)" />
 
+        {/* ── HERO SECTION ── */}
         <Hero />
+
+        {/* ── FLUPPY SECTION ── */}
         <WhatIsFluppy />
+
+         {/* ── ARCHITECTURE SECTION ── */}
         <Architecture />
 
-        {/* ── Payment Section (Minimalist Box) ── */}
-        <section id="payment" ref={demoRef as React.RefObject<HTMLElement>} className="py-24 relative z-10">
-          <div className="max-w-6xl mx-auto px-6">
-            <Reveal>
-              <div className="mb-14">
-                <SectionLabel>LIVE DEMO</SectionLabel>
-                <h2 className="text-4xl font-bold text-white mb-4">Execute Payment.</h2>
-                <p className="text-sm text-foreground/60 max-w-lg">Connect Freighter, fund USDC, and try the Zero-Knowledge payment pipeline directly on testnet.</p>
-              </div>
+         {/* ── PREVIEW SECTION ── */}
+        <DAppPreview />
 
-              <div className="grid lg:grid-cols-2 gap-6">
-                {/* KIRI: FORM */}
-                <SolidCard className="p-8 h-full flex flex-col justify-between">
-                  <div className="space-y-6">
-                    <div>
-                      <label className="text-xs font-bold uppercase tracking-widest mb-3 block" style={{ color: T.muted }}>Secret Identity (NIM)</label>
-                      <div className="relative">
-                        <FiLock className="absolute left-5 top-[18px] text-white/30 text-lg" />
-                        <input type="password" value={secret} onChange={e => setSecret(e.target.value)} placeholder="Enter your NIM" style={{...inputStyle, paddingLeft: 46}} onFocus={e => { e.currentTarget.style.borderColor = T.primary; }} onBlur={e => { e.currentTarget.style.borderColor = T.border; }} />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold uppercase tracking-widest mb-3 block" style={{ color: T.muted }}>Destination Address</label>
-                      <input value={destination} onChange={e => setDestination(e.target.value)} placeholder="G... Stellar address" style={{ ...inputStyle, fontFamily: "monospace", fontSize: 13 }} onFocus={e => { e.currentTarget.style.borderColor = T.primary; }} onBlur={e => { e.currentTarget.style.borderColor = T.border; }} />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold uppercase tracking-widest mb-3 block" style={{ color: T.muted }}>Amount (USDC)</label>
-                      <div className="relative">
-                        <FiDollarSign className="absolute left-5 top-[18px] text-white/50 text-lg" />
-                        <input type="number" step="0.1" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inputStyle, paddingLeft: 42 }} onFocus={e => { e.currentTarget.style.borderColor = T.primary; }} onBlur={e => { e.currentTarget.style.borderColor = T.border; }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-10">
-                    <button onClick={handleRunPayment} disabled={running || !secret || !destination || !amount} className="w-full py-4 rounded-xl font-bold text-black transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl flex justify-center items-center gap-2" style={{ background: T.primary }}>
-                      {running ? <><FiSettings className="animate-spin text-lg" /> Executing...</> : done ? <><FiRefreshCw className="text-lg" /> Pay Again</> : <><FiShield className="text-lg" /> Pay with ZK</>}
-                    </button>
-                  </div>
-                </SolidCard>
-
-                <TerminalLog logs={logs} running={running} txHash={txHash} />
-              </div>
-
-            </Reveal>
-          </div>
-        </section>
-
+        {/* ── FAQ SECTION ── */}
         <FAQSection />
+
+        {/* ── LOGO LOOP SECTION ── */}
+        <TechStackLoop />
+
+        {/* ── FOOTER ── */}
         <Footer />
       </div>
     </div>
