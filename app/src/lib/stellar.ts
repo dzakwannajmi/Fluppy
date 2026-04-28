@@ -13,8 +13,6 @@ import { Buffer } from "buffer";
 
 /**
  * CONFIGURATION
- * Gunakan fungsi agar evaluasi variabel dilakukan saat fungsi dipanggil, 
- * bukan hanya sekali saat file di-load.
  */
 const getRpcUrl = () => process.env.NEXT_PUBLIC_RPC_URL || "https://soroban-testnet.stellar.org:443";
 const getNetworkPassphrase = () => process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE || Networks.TESTNET;
