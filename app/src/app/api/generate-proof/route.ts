@@ -4,7 +4,7 @@ import { generateZkProof } from '@/src/lib/zkp'; // Pastikan path import ini ses
 export async function POST(req: Request) {
   try {
     const { secret, destination, amount } = await req.json();
-    const WHITELIST = ["2410010454", "2410010001"]; // Sesuai dengan test-payment.ts
+    const WHITELIST = ["2410010454", "2410010001"]; 
 
     const proof = await generateZkProof(secret, WHITELIST, destination, BigInt(amount));
 

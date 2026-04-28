@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { FiSettings, FiLock, FiPackage, FiSend, FiLink, FiDollarSign, FiCheckCircle, FiXCircle, FiKey, FiShield, FiRefreshCw } from "react-icons/fi";
 import { BsCalculator } from "react-icons/bs";
 import { isConnected, requestAccess } from "@stellar/freighter-api";
-import Navbar from "../../components/Navbar"; 
+import Navbar from "../../components/Navbar";
 
 // ─── Design tokens
 const T = {
@@ -115,22 +115,35 @@ export default function AppPage() {
 
     try {
       addLog(<FiSettings className="text-gray-400" />, "Generating ZK Proof (Groth16 / BN254)...");
-      await new Promise(r => setTimeout(r, 800)); // Simulasi API
+
+      const resProof = await fetch('/api/generate-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret, destination, amount: amountStroops })
+      });
+      const dataProof = await resProof.json();
+      if (!resProof.ok) throw new Error(dataProof.error || "Proof generation failed");
+
       addLog(<FiLock className="text-blue-400" />, "Validating Merkle Membership (depth=20)...");
-      await new Promise(r => setTimeout(r, 600));
       addLog(<BsCalculator className="text-yellow-400" />, `Computing Hash for Destination...`);
       addLog(<FiPackage className="text-orange-400" />, "Packaging proof for Soroban (XDR encoding)...");
-      await new Promise(r => setTimeout(r, 700));
       addLog(<FiSend className="text-[#FF85BB]" />, "Submitting transaction to Stellar Testnet...");
-      await new Promise(r => setTimeout(r, 1200));
+
+      const resTx = await fetch('/api/submit-tx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proof: dataProof.proof, destination, amount: amountStroops })
+      });
+      const dataTx = await resTx.json();
+      if (!resTx.ok) throw new Error(dataTx.error || "Transaction submission failed");
 
       addLog(<FiLink className="text-indigo-400" />, "Executing Smart Contract: execute_payment()...");
       addLog(<FiDollarSign className="text-emerald-400" />, "Atomic split → 95% merchant · 5% treasury...");
-      
-      const fakeHash = "7fceeea2a5" + Math.random().toString(16).slice(2, 8);
-      addLog(<FiCheckCircle className="text-green-500" />, `SUCCESS — Tx: ${fakeHash}...`, "success");
 
-      setTxHash(fakeHash); setDone(true);
+      addLog(<FiCheckCircle className="text-green-500" />, `SUCCESS — Tx: ${dataTx.hash.slice(0, 10)}...`, "success");
+
+      setTxHash(dataTx.hash);
+      setDone(true);
     } catch (err: any) {
       addLog(<FiXCircle className="text-red-400" />, `Transaction failed: ${err.message}`, "error");
     } finally {
@@ -150,7 +163,7 @@ export default function AppPage() {
     <div className="relative min-h-screen antialiased overflow-x-hidden" style={{ background: T.bg, color: T.fg }}>
       <div className="relative z-10 pt-4">
         <Navbar publicKey={publicKey} onConnectWallet={handleConnectWallet} items={navItems} baseColor="rgba(18, 15, 23, 0.4)" />
-        
+
         <div className="max-w-6xl mx-auto px-6 pt-24 pb-12">
           <div className="mb-10">
             <h1 className="text-xs font-bold uppercase tracking-widest" style={{ color: T.primary }}>Live DApp</h1>
@@ -165,7 +178,7 @@ export default function AppPage() {
                   <label className="text-xs font-bold uppercase tracking-widest mb-3 block" style={{ color: T.muted }}>Secret Identity (NIM)</label>
                   <div className="relative">
                     <FiLock className="absolute left-5 top-[18px] text-white/30 text-lg" />
-                    <input type="password" value={secret} onChange={e => setSecret(e.target.value)} placeholder="Enter your NIM" style={{...inputStyle, paddingLeft: 46}} onFocus={e => { e.currentTarget.style.borderColor = T.primary; }} onBlur={e => { e.currentTarget.style.borderColor = T.border; }} />
+                    <input type="password" value={secret} onChange={e => setSecret(e.target.value)} placeholder="Enter your NIM" style={{ ...inputStyle, paddingLeft: 46 }} onFocus={e => { e.currentTarget.style.borderColor = T.primary; }} onBlur={e => { e.currentTarget.style.borderColor = T.border; }} />
                   </div>
                 </div>
                 <div>
