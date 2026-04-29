@@ -247,7 +247,7 @@ function Hero() {
           </span>
           <span>Live on Stellar Testnet</span>
           <span className="opacity-40">·</span>
-          <span className="font-mono text-white/50">CDDV…7XY6B</span>
+          <span className="font-mono text-white/50">CB3O…YTCORG</span>
           <span className="opacity-40">↗</span>
         </motion.a>
 
