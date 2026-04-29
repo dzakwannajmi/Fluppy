@@ -10,13 +10,10 @@ const nextConfig = {
       ],
     },
   ],
-
   outputFileTracingIncludes: {
     "/api/**/*": ["./public/circuit/**/*"],
   },
-
   serverExternalPackages: ["snarkjs"],
-
 } satisfies NextConfig;
 
 export default nextConfig;
