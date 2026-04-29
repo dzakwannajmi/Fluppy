@@ -104,71 +104,67 @@ export async function generateZkProof(
   nimSecret: string,
   whitelist: string[],
   recipientAddr: string,
-  amount: bigint = BigInt(10 * 10 ** 7) // Default to 10 USDC in smallest unit
-): Promise<PaymentProofOutput> {
+  amount: bigint = BigInt(10 * 10 ** 7)
+) { // Hapus type : Promise<PaymentProofOutput> sementara jika error, atau biarkan jika sudah ada interface-nya
   console.log("ZKP: Orchestrating proof for identity secret...");
 
-  // Tambahkan console.log ini!
+  // 1. Path WASM dan ZKEY yang dijamin aman di Vercel
+  const zkeyPath = path.join(process.cwd(), 'public', 'circuit', 'circuit_final.zkey');
+  const wasmPath = path.join(process.cwd(), 'public', 'circuit', 'circuit.wasm');
+
   console.log("🕵️‍♂️ [CCTV ZKP] Alamat yang masuk ke ZKP:", recipientAddr);
 
   const poseidon = await buildPoseidon();
 
-
-  const F = poseidon.F; // Field helper
-
-  // 1. Prepare Circuit Inputs
+  // Prepare Circuit Inputs
   const secretInt = BigInt(nimSecret); // User's NIM/Secret
   const { root } = getMerkleProof(nimSecret, whitelist);
-
   const recipientHash = computeRecipientHash(recipientAddr);
 
   console.log("🕵️‍♂️ [CCTV ZKP] Hasil Hash:", recipientHash.toString());
 
-  // Define bounds (e.g., 0 to 1000 USDC)
+  // Define bounds
   const minAmount = 0n;
   const maxAmount = BigInt(1000 * 10 ** 7);
 
+  // -- Bagian perhitungan Merkle Path kamu --
   const leaf = poseidon([secretInt, amount, recipientHash]);
-
   const pathElements = new Array(20).fill(BigInt(0));
   const pathIndices = new Array(20).fill(0);
 
   let currentHash = leaf;
   for (let i = 0; i < 20; i++) {
-    // Sirkuitmu menghitung: Hash(kiri, kanan)
-    // Karena index 0, maka currentHash ada di kiri
     currentHash = poseidon([currentHash, pathElements[i]]);
   }
+  // ------------------------------------------
 
-  const realRoot = F.toObject(currentHash);
-
-  const circuitInputs = {
+  // 👇 2. BUNGKUS SEMUA INPUT UNTUK CIRCUIT 👇
+  // PENTING: snarkjs lebih suka menerima angka dalam bentuk String agar tidak error BigInt
+  const input = {
     secret: secretInt.toString(),
-    nonce: BigInt(Math.floor(Math.random() * 1000000)).toString(),
     amount: amount.toString(),
-    pathElements: pathElements.map((x) => x.toString()),
-    pathIndices: pathIndices,
-    merkleRoot: realRoot.toString(),
     recipientHash: recipientHash.toString(),
+    root: currentHash.toString(), // Atau root.toString() tergantung sirkuitmu
+    pathElements: pathElements.map(e => e.toString()),
+    pathIndices: pathIndices.map(i => i.toString()),
     minAmount: minAmount.toString(),
-    maxAmount: maxAmount.toString(),
+    maxAmount: maxAmount.toString()
   };
 
-  // 2. Generate Proof via SnarkJS
+  console.log("⚙️ Menjalankan snarkjs.groth16.fullProve...");
+
+  // 👇 3. EKSEKUSI PEMBUATAN PROOF 👇
+  // Di sinilah wasmPath dan zkeyPath akhirnya digunakan!
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
-    circuitInputs,
-    WASM_PATH,
-    ZKEY_PATH
+    input,
+    wasmPath,
+    zkeyPath
   );
 
-  // 3. Transform to Soroban-compatible encoding
-  const pi_a = encodeG1(proof.pi_a as [string, string, string]);
-  const pi_b = encodeG2(proof.pi_b as [[string, string], [string, string], [string, string]]);
-  const pi_c = encodeG1(proof.pi_c as [string, string, string]);
+  console.log("✅ ZK Proof berhasil dibuat!");
 
-  const encodedSignals = publicSignals.map((sig: string) =>
-    decimalToBe32Hex(sig)
-  ) as [string, string, string, string, string, string];
-
-  return { pi_a, pi_b, pi_c, publicSignals: encodedSignals };
+  return {
+    proof,
+    publicSignals
+  };
 }
