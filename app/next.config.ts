@@ -11,12 +11,10 @@ const nextConfig = {
     },
   ],
 
-  experimental: {
-    outputFileTracingIncludes: {
-      '/api/**/*': ['./public/circuit/**/*'],
-    },
-    serverComponentsExternalPackages: ['snarkjs'],
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./public/circuit/**/*'],
   },
+  serverExternalPackages: ['snarkjs'],
 
 };
 
