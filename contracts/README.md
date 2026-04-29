@@ -1,203 +1,200 @@
-# 🔐 Security Policy — Fluppy Protocol
+# 🦀 Fluppy Smart Contract (Soroban)
 
-## Overview
+> **Testnet Notice:** This contract is deployed on Stellar Testnet. The ZK verifier
+> is a testnet stub. Do not use for real financial transactions. See [`SECURITY.md`](../SECURITY.md).
 
-Fluppy is a privacy-preserving payment protocol on Stellar Soroban that combines
-Zero-Knowledge Membership Proofs with atomic USDC settlement. This document describes
-the security model, implemented protections, known limitations, threat model, and
-responsible disclosure policy.
-
-> ⚠️ **Testnet Status Notice**
-> Fluppy is currently deployed on Stellar Testnet only. The on-chain ZK verifier
-> is a testnet implementation. Do NOT use this protocol for real financial transactions
-> until the mainnet audit is complete and this notice is removed.
+This directory contains the on-chain logic of the Fluppy protocol: ZK membership
+verification, atomic USDC fee splitting, and circuit breaker controls — built with
+Soroban SDK v25.3.1.
 
 ---
 
-## 1. Implemented Security Controls
+## 📁 Module Structure
 
-### 1.1 One-Time Initialization Lock
+```
+contracts/src/
+├── lib.rs        # Entry point — contract functions, event emission, auth flow
+├── payment.rs    # 95/5 atomic split calculation
+├── verify.rs     # ZK membership verifier (Merkle root check)
+├── types.rs      # ZKProof, PaymentConfig, DataKey structs
+├── errors.rs     # FluppyError enum (6 typed error codes)
+└── test.rs       # 4 unit tests — initialization, split, pause, security lock
+```
 
-The `initialize()` function uses a sentinel storage key to prevent re-initialization.
-Any attempt to call it a second time triggers an immediate `panic!`, making the
-treasury address, USDC asset ID, and admin address permanently immutable after
-the first deployment.
+---
+
+## 📐 On-Chain Data Structures
+
+### `ZKProof` — Caller-Supplied Proof Payload
 
 ```rust
-if env.storage().instance().has(&DataKey::Config) {
-    panic!("Contract already initialized");
+pub struct ZKProof {
+    pub root:  BytesN<32>,
+    pub proof: Vec<BytesN<32>>,
+    pub leaf:  BytesN<32>,
 }
 ```
 
-**Guarantee:** Protocol treasury routing cannot be redirected post-deployment,
-even by the contract admin.
-
-### 1.2 Caller Authentication (`require_auth`)
-
-Every `pay_with_zk` invocation requires the `from` address to sign the transaction
-via Freighter. This is enforced by Soroban's native `Address::require_auth()` before
-any fund transfer occurs.
+### `PaymentConfig` — Immutable Protocol Configuration
 
 ```rust
-from.require_auth();
+pub struct PaymentConfig {
+    pub usdc_token:     Address,
+    pub dev_ops:        Address,
+    pub fee_percentage: i128,
+}
 ```
 
-**Guarantee:** A third party cannot submit a payment on behalf of a user without
-explicit wallet signature.
-
-### 1.3 Circuit Breaker (Emergency Pause)
-
-An admin-controlled pause mechanism halts all `pay_with_zk` operations without
-requiring contract redeployment. The `is_paused` state is checked as the first
-operation in every payment flow.
+### `DataKey` — Storage Key Enum
 
 ```rust
-check_if_paused(&env)?;
-```
-
-### 1.4 Hardcoded 95/5 Split
-
-The revenue split is hardcoded at compile time — not configurable via parameters.
-
-```rust
-let merchant_amt = (amount * 95) / 100;
-let treasury_amt = amount - merchant_amt;
-```
-
-### 1.5 Off-Chain Identity Isolation
-
-No raw user identity is stored on-chain. Only a Merkle root is recorded.
-
-### 1.6 Structured Error Codes
-
-```rust
-pub enum FluppyError {
-    UnauthorizedMember = 1,
-    InsufficientBalance = 2,
-    ContractPaused = 3,
-    NotAdmin = 4,
-    InvalidPaymentAmount = 5,
-    Overflow = 6,
+pub enum DataKey {
+    Admin,
+    IsPaused,
+    Config,
 }
 ```
 
 ---
 
-## 2. Known Limitations (Testnet Phase)
+## 📋 Contract Functions
 
-### 2.1 ⚠️ Nullifier Not Implemented (HIGH)
+| Function | Access | Description |
+|---|---|---|
+| `initialize(admin, usdc_token, dev_ops)` | One-time only | Anchors admin, USDC SAC, and treasury address into immutable storage |
+| `pay_with_zk(from, to, amount, zk_proof)` | Public | Verifies ZK proof and executes atomic 95/5 split |
+| `set_pause(admin, is_paused)` | Admin only | Enables/disables circuit breaker |
+| `is_paused()` | Read-only | Returns pause state |
 
-Replay attacks are currently possible.
+---
 
-**Planned fix:**
+## 🔄 `pay_with_zk` Execution Flow
+
+```
+Caller submits: { from, to, amount, zk_proof }
+        │
+        ▼
+1. check_if_paused()
+        │
+        ▼
+2. verify_membership()
+        │
+        ▼
+3. calculate_split()
+        │
+        ▼
+4. from.require_auth()
+        │
+        ▼
+5. token.transfer → merchant (95%)
+   token.transfer → treasury (5%)
+        │
+        ▼
+6. emit PayZkEvent
+```
+
+---
+
+## 📡 Event Schema
+
+### `PayZkEvent`
 
 ```rust
-if env.storage().persistent().has(&DataKey::Nullifier(zk_proof.nullifier.clone())) {
-    return Err(FluppyError::NullifierAlreadyUsed);
+pub struct PayZkEvent {
+    pub from:             Address,
+    pub merchant:         Address,
+    pub total_amount:     i128,
+    pub merchant_receive: i128,
+    pub protocol_fee:     i128,
+    pub timestamp:        u64,
 }
-env.storage().persistent().set(
-    &DataKey::Nullifier(zk_proof.nullifier.clone()),
-    &true
-);
 ```
 
----
-
-### 2.2 ⚠️ Verifier Stub (HIGH)
-
-ZK proofs are not cryptographically verified on-chain.
-
-**Planned fix:**
+### `PauseStatusEvent`
 
 ```rust
-bn254::pairing_check(env, &[...])
+pub struct PauseStatusEvent {
+    pub is_paused: bool,
+}
 ```
 
 ---
 
-### 2.3 ⚠️ Static Whitelist (MEDIUM)
+## ⚠️ Error Codes
 
-Hardcoded whitelist.
-
----
-
-### 2.4 ℹ️ Serialization Risks (LOW)
-
-Edge cases in proof encoding still under testing.
-
----
-
-## 3. Threat Model
-
-### Assets
-
-| Asset | Protection |
+| Code | Meaning |
 |---|---|
-| Funds | require_auth |
-| Identity | Off-chain |
-| Treasury | Immutable |
-| Availability | Pause |
-
-### Trust Boundary
-
-```
-UNTRUSTED → TRUSTED
-User input → Contract verification
-Proof → On-chain logic
-```
-
-### Threats
-
-| Threat | Status |
-|---|---|
-| Replay | ❌ |
-| Forgery | ❌ |
-| Front-run | ✅ |
-| Overflow | ✅ |
+| #1 | UnauthorizedMember |
+| #2 | InsufficientBalance |
+| #3 | ContractPaused |
+| #4 | NotAdmin |
+| #5 | InvalidPaymentAmount |
+| #6 | Overflow |
 
 ---
 
-## 4. ZK Security Properties
+## 🛡️ Security Design
 
-- Merkle membership proof only
-- No payment logic in circuit
-- Poseidon2 hashing (BN254)
+### Immutable Initialization
+- Contract config locked after first deployment
+
+### Atomic 95/5 Split
+```
+merchant = 95%
+treasury = 5%
+```
+
+### Privacy
+- No identity stored on-chain
+- Only Merkle root + proof
+
+### ZK Complexity
+- On-chain verification: **O(1)**
+- Off-chain Merkle path: **O(depth)**
 
 ---
 
-## 5. Test Coverage
+## ⚠️ Known Limitations
+
+- Nullifier not implemented → replay attack possible
+- Verifier is stub → no real pairing check yet
+
+See `SECURITY.md` for full details.
+
+---
+
+## ✅ Tests
 
 ```
 4 tests — all passing
 ```
 
-Gaps:
-- No replay test
-- No pairing test
+- Initialization lock
+- Re-init failure
+- Payment split
+- Pause logic
 
 ---
 
-## 6. Mainnet Checklist
+## 🚀 Commands
 
-- [ ] Nullifier
-- [ ] Pairing check
-- [ ] Audit
-- [ ] Root update
-- [ ] Replay protection
-
----
-
-## 7. Disclosure
-
-**Email:** repmoonasci@gmail.com  
-Response within 48 hours.
+```bash
+make build
+make test
+make deploy
+```
 
 ---
 
-## 8. Changelog
+## 🔗 Live
 
-| Version | Date | Change |
-|---|---|---|
-| 0.1.0 | 2025-04-29 | Initial |
+| Item | Value |
+|---|---|
+| Contract | CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG |
+| Tx | https://stellar.expert/explorer/testnet/tx/8cf2dccc38f490a12b6bdcf20bebbf479d5c7b04b251401ad858758737601405 |
 
 ---
+
+## 📜 License
+
+MIT
