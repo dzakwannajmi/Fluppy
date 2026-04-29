@@ -1,195 +1,216 @@
-# 🚀 Fluppy Protocol
+# 🔐 Fluppy Protocol
+### Privacy-Preserving Payment Infrastructure on Stellar Soroban
 
-Fluppy is a decentralized, non-custodial privacy payment gateway built on **Stellar Soroban**.  
-It empowers users to make private payments using **Zero-Knowledge (ZK) Identity Verification** while enabling merchants to accept payments with an **automated, trustless atomic fee split**.
+Fluppy is an open-source, non-custodial payment gateway that combines 
+**Zero-Knowledge Identity Verification** with **atomic on-chain revenue splitting** 
+— built natively on Stellar Soroban using Protocol 25 BN254 host functions.
 
-> 🏆 **SCF Instawards Candidate:** This repository is part of the Stellar Community Fund (SCF) submission. All code is open-source, non-custodial, and engineered for maximum auditability and security.
+> 🏆 **SCF Instawards Candidate** | MIT Licensed | Fully Open Source
 
----
-
-## 🌍 The Problem & Our Innovation
-
-### The Problem
-Current payment infrastructures on Soroban lack a standardized mechanism that integrates **identity privacy** with **automated, on-chain revenue sharing**.  
-
-Users are frequently required to expose sensitive credentials (like national IDs or student numbers) to third parties just to prove eligibility for a transaction.  
-
-At the same time, merchants lack a transparent, instantaneous, and trustless mechanism for distributing protocol revenue.
+[![Tests](https://img.shields.io/badge/contract_tests-4%2F4_passing-brightgreen)]()
+[![Network](https://img.shields.io/badge/network-Stellar_Testnet-blue)]()
+[![ZK](https://img.shields.io/badge/ZK_stack-Groth16%20%2F%20BN254-purple)]()
 
 ---
 
-### The Innovation on Stellar
-Fluppy decouples **Identity Verification** from **Data Exposure**.
+## 🌍 The Problem
 
-It leverages **Protocol 25 CAP-0074 (BN254 host functions)** and **Poseidon2 hashing** on Soroban to verify identities using **Zero-Knowledge Proofs (ZK-SNARKs)**.
+Existing payment systems on Soroban have two unresolved gaps:
 
-This creates a new paradigm:
+1. **No privacy-preserving identity layer** — Users must expose raw credentials 
+   (national IDs, student numbers) to prove eligibility, which are permanently 
+   readable on the public ledger.
 
-> **100% private identity authorization combined with 100% transparent and atomic on-chain settlement.**
+2. **No trustless revenue distribution** — Merchants manually split payments 
+   off-chain, creating reconciliation overhead and counterparty risk.
 
----
-
-## 🌟 Key Innovations
-
-### 1. Zero-Knowledge Credential Proofs (Circom & Groth16)
-Fluppy utilizes **Poseidon2 hashing** and **Groth16 ZK-SNARKs** on the **BN254 curve**.
-
-Users can prove eligibility (e.g., student ID, membership) locally in their browser without exposing raw credentials or identity on-chain.
+Fluppy solves both in a single atomic transaction.
 
 ---
 
-### 2. Atomic Split Settlements (95/5)
-Unlike traditional payment gateways, Fluppy executes an **atomic split transaction** via Soroban.
+## 💡 The Innovation
 
-In a single ledger operation:
-- 95% → Merchant  
-- 5% → Protocol Treasury  
+> **100% private identity authorization + 100% transparent atomic on-chain settlement.**
 
-No intermediaries. No partial states.
-
----
-
-### 3. Cryptographic Field Overflow Protection (BN254 Modulo Wrap Fix)
-To align 256-bit SHA-256 hashes with the ~254-bit BN254 field, Fluppy implements a strict **byte masking strategy**.
-
-By forcing the first byte of the recipient hash to `0` across both TypeScript and Rust:
-- Prevents field overflow  
-- Ensures deterministic cross-platform verification  
+Fluppy decouples *what you prove* from *what you reveal*.  
+Users prove eligibility via a ZK-SNARK. The chain only sees a 32-byte Merkle root — 
+never the underlying identity.
 
 ---
 
-## 📂 Folder Structure
+## 🏗️ Architecture
 
-```text
-├── circuits/             # Circom ZK circuits (Merkle Tree & Groth16 logic)
-├── contracts/            # Rust Smart Contracts (Soroban BN254 Verifier & SAC integration)
-├── public/               # Static frontend assets
-├── script/               # CLI tooling (e.g., test-payment.ts for testing ZK payloads locally)
-├── src/                  
-│   ├── app/              # Next.js 14 App Router (UI pages & Next.js API Routes for ZK)
-│   ├── components/       # Reusable UI components (ReactBits, Tailwind, Framer Motion)
-│   ├── hooks/            # Custom React hooks (e.g., Freighter wallet integration)
-│   ├── lib/              # Core TS logic (Soroban XDR mapping, ZKP generation)
-│   └── types/            # TypeScript definitions for ZK and Stellar payloads
-└── Makefile              # Global orchestrator for building, testing, and formatting
 ```
+                    ┌─────────────────────────────────────┐
+                    │           USER BROWSER               │
+                    │                                      │
+  NIM / Secret ID ──►  Poseidon2 Hash                     │
+                    │       ↓                              │
+                    │  Merkle Tree (depth=20)              │
+                    │       ↓                              │
+                    │  Groth16 Proof (BN254)               │
+                    │       ↓                              │
+                    │  [π_a, π_b, π_c, public_inputs]      │
+                    └────────────┬────────────────────────-┘
+                                 │ HTTPS POST
+                    ┌────────────▼────────────────────────-┐
+                    │        SOROBAN CONTRACT               │
+                    │                                      │
+                    │  BN254 pairing_check (Protocol 25)   │
+                    │       ↓                              │
+                    │  Merkle Root Validation              │
+                    │       ↓                              │
+                    │  Atomic Split via SAC                │
+                    │    95% → Merchant                    │
+                    │     5% → Protocol Treasury           │
+                    └──────────────────────────────────────┘
+```
+
+---
+
+## 🌟 Key Technical Contributions
+
+### 1. ZK Membership Proofs (Groth16 / BN254)
+- Circuit: Circom 2.1 with **Poseidon2 hashing**
+- Proof system: Groth16 — constant-size proof
+- On-chain verification: Protocol 25 native host functions
+
+### 2. Atomic 95/5 Fee Split
+- Single ledger operation via Stellar Asset Contract (USDC)
+- Hardcoded split prevents admin manipulation
+- Emits structured audit event
+
+### 3. BN254 Field Overflow Protection
+- Byte masking strategy (`hash[0] = 0x00`)
+- Ensures deterministic cross-platform verification
+
+### 4. One-Time Initialization Lock
+- Prevents re-initialization using storage sentinel
+- Ensures immutability post-deployment
 
 ---
 
 ## 🚀 Live Verification (Stellar Testnet)
 
-- **Smart Contract ID**  
-  `CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG`
+| Item | Value |
+|------|-------|
+| Contract ID | `CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG` |
+| Verified ZK Payment | https://stellar.expert/explorer/testnet/tx/8cf2dccc38f490a12b6bdcf20bebbf479d5c7b04b251401ad858758737601405 |
+| USDC Contract | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` |
 
-- **Verified ZK Payment (Tx Hash)**  
-  https://stellar.expert/explorer/testnet/tx/8cf2dccc38f490a12b6bdcf20bebbf479d5c7b04b251401ad858758737601405
+---
 
-> Open the **Events tab** on Stellar Expert to view audit logs (Nullifier, Merchant Receive, Protocol Fee).
+## ✅ Contract Test Coverage
+
+```
+running 4 tests
+test test_initialization .......................... ok  
+test test_re_initialization_fails ................. ok  
+test test_successful_atomic_split_payment ......... ok  
+test test_circuit_breaker_pause_logic ............. ok  
+
+test result: ok. 4 passed; 0 failed
+```
 
 ---
 
 ## 📦 Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
-- Rust + `stellar-cli`
-- Freighter Wallet (browser extension)
+- Node.js v18+
+- Rust + stellar-cli
+- Freighter Wallet
 
----
-
-### 1. Installation
+### 1. Clone & Install
 
 ```bash
 git clone https://github.com/dzakwannajmi/Fluppy.git
 cd fluppy
 
-npm install
-stellar contract build
+cd app && npm install && cd ..
+
+rustup target add wasm32-unknown-unknown
 ```
 
----
+### 2. Configure Environment
 
-### 2. Add USDC Trustline
-
-1. Open https://stellar.expert/explorer/testnet  
-2. Search Contract ID:
-   ```
-   CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
-   ```
-3. Click **Add Trustline**
-4. Confirm via Freighter
-5. Fund wallet with testnet USDC
-
----
-
-### 3. Environment Variables
-
-Create `.env`:
+```bash
+cp app/.env.example app/.env.local
+```
 
 ```env
 NEXT_PUBLIC_CONTRACT_ID=CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG
-SENDER_SECRET=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+NEXT_PUBLIC_RPC_URL=https://soroban-testnet.stellar.org:443
+NEXT_PUBLIC_HORIZON_URL=https://horizon-testnet.stellar.org
+NEXT_PUBLIC_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
 ```
 
----
-
-## 💻 Usage
-
-### Option A: CLI (ZK Payment)
+### 3. Run Locally
 
 ```bash
-npx tsx script/test-payment.ts
-```
-
-**Output:**
-```text
-🛠️ Generating Proof...
-🧮 Computing hash...
-✅ Proof Generated!
-🚀 Submitting...
-🎉 SUCCESS!
-Tx Hash: 8cf2dccc...
+cd app && npm run dev
 ```
 
 ---
 
-### Option B: Web App
-
-```bash
-npm run dev
-```
-
-Steps:
-1. Open http://localhost:3000  
-2. Connect Freighter Wallet  
-3. Input:
-   - NIM (e.g., 2410010454)
-   - Destination Address
-   - Amount  
-4. Execute transaction with real-time ZK proof generation  
-
----
-
-## 🛠 Developer Experience (DX)
+## 🛠 Developer Commands
 
 | Command | Description |
-|--------|------------|
-| `make setup` | Setup dependencies & toolchain |
-| `make test` | Run smart contract tests |
-| `make build` | Compile optimized WASM |
-| `make fmt` | Format Rust code |
+|---------|-------------|
+| make setup | Install dependencies |
+| make test | Run tests |
+| make build | Compile WASM |
+| make deploy | Deploy contract |
+| make fmt | Format code |
+| make clean | Clean artifacts |
 
 ---
 
 ## 🧩 Tech Stack
 
-- **Smart Contracts:** Rust, Soroban SDK  
-- **ZK Stack:** Circom 2.1, SnarkJS, Groth16, Poseidon2, BN254  
-- **Frontend:** Next.js 14, Tailwind CSS, Framer Motion, ReactBits  
-- **Wallet:** @stellar/freighter-api v3  
+| Layer | Technology |
+|-------|-----------|
+| Smart Contracts | Rust, Soroban SDK |
+| ZK Circuits | Circom, SnarkJS, Groth16 |
+| ZK Hashing | Poseidon2 |
+| Frontend | Next.js 16, Tailwind |
+| Wallet | Freighter API |
+| Deployment | Vercel |
+
+---
+
+## 🗺️ Roadmap
+
+| Phase | Milestone | Status |
+|-------|-----------|--------|
+| MVP | Testnet ZK + Split | ✅ |
+| V1 | Mainnet Launch | 🔄 |
+| V2 | Merchant SDK | 📋 |
+| V3 | Multi-credential | 📋 |
+
+---
+
+## 👥 Team
+
+| Role | Contributor |
+|------|-------------|
+| Protocol Engineer | @dzakwannajmi |
+
+---
+
+## 📁 Structure
+
+```
+fluppy/
+├── circuits/
+├── contracts/
+├── app/
+├── script/
+└── Makefile
+```
 
 ---
 
 ## 📜 License
 
-MIT License — open-source privacy infrastructure for global finance.
+MIT License

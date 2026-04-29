@@ -30,7 +30,6 @@ out/
 !.yarn/versions
 
 # ─── ZK Raw Artifacts ─────────────────────────────────
-
 *.ptau
 *.wtns
 *.lex
@@ -39,6 +38,12 @@ out/
 circuits/*.zkey
 circuit/build/
 *.zkey
+
+# ─── ZK Circuit Deployment Files (KEEP THESE) ─────────
+# Negation must come AFTER the blocking rules above
+!app/public/circuit/*.zkey
+!app/public/circuit/*.wasm
+!app/public/circuit/*.json
 
 # ─── LOGS & DEBUGGING ─────────────────────────────────────────────────────────
 npm-debug.log*
