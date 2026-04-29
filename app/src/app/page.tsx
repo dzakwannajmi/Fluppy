@@ -94,6 +94,91 @@ function SolidCard({ children, className = "" }: { children: React.ReactNode; cl
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+//  METRICS STRIP SECTION (NEW)
+// ═════════════════════════════════════════════════════════════════════════════
+function MetricsStrip() {
+  const metrics = [
+    { value: "5.2s", label: "Avg settlement time" },
+    { value: "100%", label: "Test coverage (4/4)" },
+    { value: "0", label: "Custodial dependencies" },
+    { value: "MIT", label: "Open-source license" },
+  ];
+
+  return (
+    <section className="relative py-12 px-6 z-10 border-y" style={{ borderColor: T.border }}>
+      <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-y-8">
+        {metrics.map((m) => (
+          <div key={m.label} className="text-center">
+            <div className="text-3xl md:text-4xl font-bold text-white tracking-tight mb-1">
+              {m.value}
+            </div>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-white/40">
+              {m.label}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  HOW IT WORKS PLAIN SECTION (NEW)
+// ═════════════════════════════════════════════════════════════════════════════
+function HowItWorksPlain() {
+  const steps = [
+    {
+      num: "01",
+      title: "Prove you belong",
+      desc: "Generate a cryptographic proof on your device that you're an approved member. Your identity never leaves your laptop.",
+    },
+    {
+      num: "02",
+      title: "Pay anyone",
+      desc: "Send USDC to any merchant. The proof travels with the payment, not your name.",
+    },
+    {
+      num: "03",
+      title: "Settled in 5 seconds",
+      desc: "Stellar splits the funds atomically — 95% to the merchant, 5% to the protocol — in one irreversible transaction.",
+    },
+  ];
+
+  return (
+    <section className="relative py-20 px-6 z-10">
+      <div className="max-w-5xl mx-auto">
+        <Reveal>
+          <SectionLabel>HOW IT WORKS</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-4">
+            Privacy in <HighlightText>three steps.</HighlightText>
+          </motion.h2>
+          <motion.p variants={fadeUp} className="text-base text-white/55 max-w-xl mb-14">
+            No crypto-jargon. Here's what actually happens when you send a payment with Fluppy.
+          </motion.p>
+
+          <motion.div variants={stagger(0.08)} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {steps.map((s) => (
+              <motion.div
+                key={s.num}
+                variants={fadeUp}
+                className="p-7 rounded-2xl border"
+                style={{ background: T.card, borderColor: T.border }}
+              >
+                <div className="text-xs font-mono mb-5" style={{ color: T.primary }}>
+                  {s.num}
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2 tracking-tight">{s.title}</h3>
+                <p className="text-sm text-white/55 leading-relaxed">{s.desc}</p>
+              </motion.div>
+            ))}
+          </motion.div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 //  ARCHITECTURE SECTION
 // ═════════════════════════════════════════════════════════════════════════════
 const ARCH_NODES = [
@@ -114,13 +199,20 @@ function Architecture() {
           </motion.h2>
 
           <motion.div variants={stagger(0.1)} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {ARCH_NODES.map((n) => (
+            {ARCH_NODES.map((n, i) => (
               <motion.div key={n.label} variants={fadeUp} className="relative">
                 <SolidCard className="p-8 h-full flex flex-col hover:border-[#FF85BB]/40 transition-colors">
                   <div className="text-sm font-mono mb-6" style={{ color: T.primary }}>{n.glyph}</div>
                   <h3 className="text-lg font-bold text-white mb-2">{n.label}</h3>
                   <p className="text-sm text-foreground/60 leading-relaxed">{n.sub}</p>
                 </SolidCard>
+
+                {/* Arrow Connector on Desktop */}
+                {i < ARCH_NODES.length - 1 && (
+                  <div className="hidden md:flex absolute top-1/2 -right-3 -translate-y-1/2 z-20 items-center justify-center w-6 h-6 rounded-full" style={{ background: T.bg, color: T.primary }}>
+                    →
+                  </div>
+                )}
               </motion.div>
             ))}
           </motion.div>
@@ -136,12 +228,33 @@ function Architecture() {
 function Hero() {
   return (
     <section className="relative pt-32 md:pt-40 pb-28 px-6">
-      <div className="max-w-5xl mx-auto text-center">
+      <div className="max-w-5xl mx-auto text-center flex flex-col items-center">
+        
+        {/* Live status pill */}
+        <motion.a
+          href="https://stellar.expert/explorer/testnet/contract/CDDVG5GDT7E4HSGKSYFXRSAWEGINCAMOX33THIBVXYUH3R7UE2ET7XY6B"
+          target="_blank"
+          rel="noopener noreferrer"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.6 }}
+          className="inline-flex items-center gap-2.5 px-4 py-1.5 mb-9 rounded-full border backdrop-blur-md text-xs text-white/70 hover:text-white hover:border-[#FF85BB]/40 transition-colors"
+          style={{ borderColor: T.border, background: T.glass }}
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+          </span>
+          <span>Live on Stellar Testnet</span>
+          <span className="opacity-40">·</span>
+          <span className="font-mono text-white/50">CDDV…7XY6B</span>
+          <span className="opacity-40">↗</span>
+        </motion.a>
 
         <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.7 }} className="text-5xl sm:text-7xl md:text-[7rem] font-bold tracking-tighter text-white leading-[1.05]">
-          Private
+          Private Payments,
           <br />
-          <HighlightText>Payments</HighlightText>
+          <HighlightText>Finally.</HighlightText>
         </motion.h1>
 
         <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, duration: 0.7 }} className="mt-9 text-lg md:text-xl text-foreground/60 max-w-2xl mx-auto leading-relaxed">
@@ -149,12 +262,19 @@ function Hero() {
         </motion.p>
 
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.6 }} className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a href="#payment" className="flex items-center justify-center gap-2 px-8 py-4 rounded-full text-black font-bold text-sm transition-transform hover:scale-105" style={{ background: T.primary }}>
+          <a href="#payment-preview" className="flex items-center justify-center gap-2 px-8 py-4 rounded-full text-black font-bold text-sm transition-transform hover:scale-105" style={{ background: T.primary }}>
             Run Live Demo <FiArrowDown className="text-lg" />
           </a>
           <a href="https://github.com/dzakwannajmi/Fluppy" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 px-8 py-4 rounded-full border font-bold text-sm text-white transition-colors hover:bg-white/5" style={{ borderColor: T.border }}>
             <FiGithub className="text-lg" /> View GitHub
           </a>
+          <button
+            onClick={() => document.getElementById("payment-preview")?.scrollIntoView({ behavior: "smooth" })}
+            className="flex items-center justify-center gap-2 px-8 py-4 rounded-full font-bold text-sm text-white/80 hover:text-white transition-colors"
+          >
+            <span className="w-7 h-7 rounded-full border flex items-center justify-center text-[10px]" style={{ borderColor: T.border }}>▶</span>
+            Watch Demo
+          </button>
         </motion.div>
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.85, duration: 0.6 }} className="mt-20 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-xs font-bold uppercase tracking-widest text-white/40">
@@ -176,6 +296,7 @@ const FEATURES = [
   { title: "Dynamic Zero-Knowledge", desc: "Prove membership in a whitelist without revealing identity." },
   { title: "On-chain Verification", desc: "BN254 pairing checks executed natively via Stellar Protocol 25 host functions." },
   { title: "Atomic Settlement", desc: "Funds split atomically — 95% to merchant, 5% to treasury — in a single irreversible transaction." },
+  { title: "Non-Custodial", desc: "Treasury and asset IDs are anchored on-chain at init. We never touch your funds." },
 ];
 
 function WhatIsFluppy() {
@@ -272,6 +393,32 @@ const techLogos = [
 
 ];
 
+function TechStackLoop() {
+  return (
+    <section className="relative w-full z-10 pt-16 pb-12" style={{ borderTop: `1px solid ${T.border}` }}>
+      <div className="max-w-6xl mx-auto px-6 text-center mb-6">
+        <span className="text-[10px] font-bold tracking-[0.3em] uppercase" style={{ color: T.muted }}>
+          Powered By
+        </span>
+      </div>
+      <div style={{ height: '80px', position: 'relative', overflow: 'hidden' }}>
+        <LogoLoop
+          logos={techLogos}
+          speed={120}
+          direction="left"
+          logoHeight={40}
+          gap={80}
+          hoverSpeed={30}
+          scaleOnHover
+          fadeOut
+          fadeOutColor={T.bg}
+          ariaLabel="Technology Stack"
+        />
+      </div>
+    </section>
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  DAPP PREVIEW SECTION
 // ═════════════════════════════════════════════════════════════════════════════
@@ -286,6 +433,12 @@ function DAppPreview() {
           </div>
 
           <Link href="/app" className="block relative group cursor-pointer rounded-[2rem] overflow-hidden">
+            
+            {/* Always-visible instruction badge */}
+            <div className="absolute top-6 left-6 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border text-[10px] font-bold uppercase tracking-wider text-white/80" style={{ background: T.glass, borderColor: T.border }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-[#FF85BB] animate-pulse" />
+              Hover to launch
+            </div>
 
             <div className="grid lg:grid-cols-2 gap-6 p-6 border rounded-[2rem] opacity-40 blur-[4px] group-hover:blur-md transition-all duration-500" style={{ background: T.card, borderColor: T.border }}>
               {/* Dummy Form */}
@@ -316,7 +469,7 @@ function DAppPreview() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  FAQ SECTION (Dengan Dropdown Animasi Halus)
+//  FAQ SECTION 
 // ═════════════════════════════════════════════════════════════════════════════
 const FAQS = [
   { q: "What is Fluppy?", a: "Fluppy is a privacy-first payment gateway built on Stellar Soroban. It allows users to make payments while proving their eligibility (via ZK-SNARKs) without revealing their actual identity to the public ledger." },
@@ -373,32 +526,6 @@ function FAQSection() {
   );
 }
 
-function TechStackLoop() {
-  return (
-    <section className="relative w-full z-10 pt-16 pb-12" style={{ borderTop: `1px solid ${T.border}` }}>
-      <div className="max-w-6xl mx-auto px-6 text-center mb-6">
-        <span className="text-[17px] font-bold tracking-[0.2em] uppercase" style={{ color: T.fg }}>
-          POWERED BY
-        </span>
-      </div>
-      <div style={{ height: '80px', position: 'relative', overflow: 'hidden' }}>
-        <LogoLoop
-          logos={techLogos}
-          speed={120}
-          direction="left"
-          logoHeight={40}
-          gap={80}
-          hoverSpeed={30}
-          scaleOnHover
-          fadeOut
-          fadeOutColor={T.bg}
-          ariaLabel="Technology Stack"
-        />
-      </div>
-    </section>
-  );
-}
-
 // ═════════════════════════════════════════════════════════════════════════════
 //  Main Page (Stateful)
 // ═════════════════════════════════════════════════════════════════════════════
@@ -407,6 +534,13 @@ export default function Page() {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+
+  // TOAST STATE (NEW)
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [secret, setSecret] = useState("2410010454");
@@ -429,7 +563,7 @@ export default function Page() {
         setPublicKey(access.address);
         addLog(<FiKey className="text-[#FF85BB]" />, `Freighter Connected: ${access.address.slice(0, 6)}...${access.address.slice(-4)}`, "success");
       } else {
-        alert("Please install Freighter extension!");
+        showToast("Please install Freighter extension!");
         window.open("https://freighter.app", "_blank");
       }
     } catch (e: any) {
@@ -438,11 +572,11 @@ export default function Page() {
   };
 
   const handleRunPayment = async () => {
-    if (!publicKey) { alert("Please connect your Freighter wallet first!"); return; }
+    if (!publicKey) { showToast("Please connect your Freighter wallet first!"); return; }
     if (running) return;
 
     const amountStroops = Math.floor(parseFloat(amount) * 10_000_000);
-    if (amountStroops <= 0 || isNaN(amountStroops)) { alert("Invalid amount!"); return; }
+    if (amountStroops <= 0 || isNaN(amountStroops)) { showToast("Invalid amount!"); return; }
 
     setRunning(true); setDone(false); setLogs([]); setTxHash(null);
     setTimeout(() => { demoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 80);
@@ -480,12 +614,6 @@ export default function Page() {
     }
   };
 
-  const inputStyle: React.CSSProperties = {
-    background: "transparent", border: `1px solid ${T.border}`, borderRadius: 16,
-    color: "white", fontSize: 14, outline: "none", padding: "16px", width: "100%",
-    transition: "border-color 0.2s",
-  };
-
   const navItems = [
     { label: "Protocol", bgColor: T.card, textColor: "#fff", links: [{ label: "How it Works", href: "#features", ariaLabel: "How it Works" }] },
     { label: "Ecosystem", bgColor: T.card, textColor: "#fff", links: [{ label: "Stellar Testnet", href: "https://stellar.expert", ariaLabel: "Stellar Network" }] },
@@ -510,6 +638,12 @@ export default function Page() {
         {/* ── HERO SECTION ── */}
         <Hero />
 
+        {/* ── METRICS STRIP (NEW) ── */}
+        <MetricsStrip />
+
+        {/* ── PLAIN EXPLAINER (NEW) ── */}
+        <HowItWorksPlain />
+
         {/* ── FLUPPY SECTION ── */}
         <WhatIsFluppy />
 
@@ -528,6 +662,21 @@ export default function Page() {
         {/* ── FOOTER ── */}
         <Footer />
       </div>
+
+      {/* ── TOAST UI (NEW) ── */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-full backdrop-blur-xl border text-sm font-medium text-white shadow-2xl"
+            style={{ background: T.glass, borderColor: T.border }}
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
