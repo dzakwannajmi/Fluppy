@@ -10,6 +10,14 @@ const nextConfig = {
       ],
     },
   ],
+
+  experimental: {
+    outputFileTracingIncludes: {
+      '/api/**/*': ['./public/circuit/**/*'],
+    },
+    serverComponentsExternalPackages: ['snarkjs'],
+  },
+
 };
 
 export default nextConfig;

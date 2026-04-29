@@ -256,6 +256,19 @@ const techLogos = [
     title: "Rise in",
     href: "https://www.risein.com/"
   },
+  {
+    node: (
+      <div
+        className="icon-mask w-[120px] h-[60px]"
+        style={{
+          maskImage: 'url(/logos/SDF.avif)',
+          WebkitMaskImage: 'url(/logos/SDF.avif)'
+        }}
+      />
+    ),
+    title: "Stellar Development Foundation",
+    href: "https://www.stellar.org/"
+  },
 
 ];
 
