@@ -1,63 +1,205 @@
-# 💻 Fluppy Client Interface (Application Layer)
+# 💻 Fluppy — Frontend Application (`/app`)
 
-[cite_start]This directory contains the high-performance web dashboard for the **Fluppy Protocol**, a **Layer 3 application layer** solution built on the **Stellar Testnet**[cite: 7]. [cite_start]The interface serves as a non-custodial gateway, allowing users to interact with Soroban smart contracts through the **Freighter** wallet[cite: 14].
+This directory contains the Next.js web interface for the Fluppy Protocol.
+It handles client-side ZK proof generation, Freighter wallet integration,
+and Soroban transaction submission for the `pay_with_zk` contract function.
 
-## 🚀 Technical Features
+> **Testnet Notice:** This application connects to Stellar Testnet only.
+> The ZK verifier is a testnet build. See [`../SECURITY.md`](../SECURITY.md)
+> for known limitations before using in any financial context.
 
-  * [cite_start]**Client-Side ZKP Generation**: Leverages `MerkleTreeJS` to generate cryptographic membership proofs locally[cite: 14]. [cite_start]This ensures that sensitive identifiers never leave the user's device, maintaining absolute data sovereignty[cite: 9].
-  * [cite_start]**On-Chain Parameter Anchoring**: Following a security-first approach, this client does not store treasury or asset IDs in local environment variables[cite: 19]. [cite_start]Instead, it fetches these immutable parameters directly from the smart contract's storage to prevent unauthorized redirection of funds[cite: 19].
-  * [cite_start]**Atomic USDC Settlement**: Facilitates the instantaneous bifurcation of funds—distributing 95% to the merchant and 5% to the protocol treasury in a single, atomic operation on the Stellar Ledger[cite: 14].
-  * [cite_start]**Deterministic XDR Serialization**: Implements precise mapping of JavaScript objects to **Soroban-compliant ScVal** (XDR) formats, ensuring data integrity during the `pay_with_zk` contract invocation[cite: 14].
-  * [cite_start]**Real-Time Finality Monitoring**: Includes an asynchronous polling engine that tracks transaction status from submission to ledger finality, providing users with immediate feedback[cite: 14, 19].
+---
 
-## 🛠️ Technical Stack
+## 📁 Directory Structure
 
-  * [cite_start]**Framework**: Next.js 14 (App Router) with TypeScript[cite: 14].
-  * [cite_start]**Blockchain Integration**: `@stellar/stellar-sdk` & `@stellar/freighter-api`[cite: 14].
-  * **Cryptography**: SHA-256 hashing and Merkle Tree construction via `merkletreejs`.
-  * **Infrastructure**: Soroban RPC & Horizon Server connectivity.
+```
+app/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx           # Main payment UI (NIM input, amount, wallet)
+│   │   ├── layout.tsx         # Root layout with COOP/COEP security headers
+│   │   └── globals.css        # Global styles
+│   ├── components/            # UI components (SuccessReceipt, animations)
+│   ├── hooks/
+│   │   └── useFluppy.ts       # Core hook — wallet, ZKP, payment orchestration
+│   └── lib/
+│       ├── zkp.ts             # ZK proof generation (Noir + Barretenberg)
+│       ├── stellar.ts         # Soroban XDR encoding + transaction submission
+│       └── errorMapper.ts     # Contract error code → user-friendly messages
+├── public/
+│   └── circuit.json           # Compiled Noir circuit (bytecode + ABI)
+├── next.config.ts             # COOP/COEP headers, WASM config, CSP policy
+└── package.json
+```
+
+---
+
+## 🔄 Payment Flow
+
+```
+User enters NIM + merchant address + amount
+        │
+        ▼
+1. useFluppy.ts → generateZkProof(nimSecret, WHITELIST)
+        │
+        ▼
+2. zkp.ts → Poseidon2 hash of each whitelist entry
+            → Merkle path computation (depth 10)
+            → Noir circuit execution (witness generation)
+            → Barretenberg proof generation (BN254)
+        │
+        ▼
+3. stellar.ts → Map proof to Soroban ScVal (scvBytes)
+               → Build pay_with_zk transaction via stellar-sdk
+               → Request Freighter wallet signature
+               → Submit to Soroban RPC
+        │
+        ▼
+4. useFluppy.ts → Poll for transaction finality
+                → Emit timestamped log entries
+                → Display tx hash on success
+```
+
+---
+
+## 🧩 Technical Stack
+
+| Layer | Library | Version |
+|---|---|---|
+| Framework | Next.js (App Router) | 16.2.3 |
+| Language | TypeScript | 5.x |
+| ZK Proving | `@noir-lang/backend_barretenberg` | Noir 1.0.0-beta.19 |
+| ZK Circuit | `@noir-lang/noir_js` | Noir 1.0.0-beta.19 |
+| ZK Hashing | `poseidon-lite` (Poseidon2, BN254) | latest |
+| Blockchain SDK | `@stellar/stellar-sdk` | 15.0.1 |
+| Wallet | `@stellar/freighter-api` | 6.0.1 |
+| UI Animation | `framer-motion` / `motion` | latest |
+| Styling | Tailwind CSS | 3.x |
+| Notifications | `react-hot-toast` | latest |
+
+---
 
 ## ⚙️ Environment Configuration
 
-To ensure secure connectivity, configure your `.env.local` file with the following network parameters. [cite_start]Note that **DevOps Wallet** and **USDC ID** are excluded here as they are securely anchored within the smart contract to mitigate tampering risks[cite: 19].
+Create `app/.env.local` (this file is gitignored — never commit it):
 
 ```env
-# Network Connectivity & Contract Identification
-NEXT_PUBLIC_CONTRACT_ID=CBBM6MKF3S74Y7FSRBZZJRD5KNIYCTDG5FSWHFHYXYC2DBMMJEFL2NH5
+NEXT_PUBLIC_CONTRACT_ID=CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG
 NEXT_PUBLIC_RPC_URL=https://soroban-testnet.stellar.org:443
 NEXT_PUBLIC_HORIZON_URL=https://horizon-testnet.stellar.org
 NEXT_PUBLIC_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
 ```
 
-## 🚦 Installation and Deployment
+**Why only 4 variables?** The contract's treasury address (`dev_ops`) and USDC
+token address are stored inside the Soroban contract's `PaymentConfig` instance
+storage, set permanently at initialization. The payment split is enforced on-chain
+— these values are never passed from the frontend.
 
-### 📦 Prerequisites
+---
 
-  * Node.js v18.0.0 or higher.
-  * Freighter Wallet extension configured for **Testnet**.
+## 🛠️ Local Setup
 
-### 🛠️ Local Development
+### Prerequisites
 
-1.  **Install Dependencies**:
-    ```bash
-    npm install
-    ```
-2.  **Launch Development Server**:
-    ```bash
-    npm run dev
-    ```
-3.  **Access the Dashboard**: Navigate to [http://localhost:3000](https://www.google.com/search?q=http://localhost:3000).
+- Node.js **v20.0.0 or higher** (required by `@stellar/stellar-sdk@15`)
+- Freighter Wallet browser extension, configured for **Testnet**
 
-## 🔒 Security Architecture: Tamper-Proof Routing
+### Installation
 
-[cite_start]Unlike standard dApps that rely on centralized `.env` files for treasury routing, Fluppy utilizes **Immutable Contract Storage**[cite: 19]. [cite_start]By invoking parameters stored on-chain, the frontend ensures that even if the application layer is compromised, the automated 95/5 revenue split remains cryptographically enforced and unalterable[cite: 11, 14].
+```bash
+cd app
+npm install
+```
 
-## 📺 Evidence of Execution
+### Development Server
 
-  * [cite_start]**Verifiable Transaction**: Tx Hash `c4dbc5baeb0b8fb4f7975fd73234a44d1b0e716d1baab5a79076132a7d73180c4` demonstrates successful ZKP validation and USDC bifurcation[cite: 23].
-  * [cite_start]**Technical Repository**: [Link to GitHub Repo][cite: 23].
-  * [cite_start]**Demo Walkthrough**: [3-5 Minute Video Link][cite: 23].
+```bash
+npm run dev
+# → http://localhost:3000
+```
+
+### Production Build
+
+```bash
+npm run build
+npm start
+```
+
+---
+
+## 🔑 Key Source Files
+
+### `src/lib/zkp.ts` — ZK Proof Generation
+
+- Runs entirely client-side (`'use client'`)
+- Fetches compiled circuit from `/public/circuit.json`
+- Uses Poseidon2 hashing via `poseidon-lite`
+- Builds Merkle tree and computes membership path
+- Executes Noir circuit and generates BN254 proof via Barretenberg
+
+### `src/lib/stellar.ts` — Soroban Integration
+
+- Encodes proof into Soroban `ScVal` (XDR)
+- Applies BN254 overflow protection (`hash[0] = 0x00`)
+- Builds and submits `pay_with_zk` transaction
+- Uses RPC polling for confirmation
+
+### `src/hooks/useFluppy.ts` — Orchestration
+
+- Handles wallet connection (Freighter)
+- Executes full ZKP → transaction pipeline
+- Maintains execution logs
+- Maps contract errors to UI messages
+
+### `src/lib/errorMapper.ts` — Error Mapping
+
+| Contract Error | Message |
+|---|---|
+| `Error(Contract, #1)` | Identity not authorized |
+| `Error(Contract, #2)` | Insufficient balance |
+| `Error(Contract, #3)` | Protocol paused |
+| `Error(WasmVm, InvalidAction)` | Already initialized |
+
+---
+
+## 🔒 Security Architecture
+
+### Cross-Origin Isolation
+
+```ts
+{ key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+{ key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+```
+
+### Content Security Policy
+
+Uses `wasm-unsafe-eval` for WASM support (not `unsafe-eval`).
+
+### Identity Privacy
+
+- Identity never leaves browser
+- Only ZK proof sent on-chain
+- No raw credential stored anywhere
+
+### Whitelist
+
+- Hardcoded for testnet
+- Future: dynamic Merkle root updates
+
+---
+
+## 📺 Verified Evidence
+
+| Item | Link |
+|---|---|
+| Contract | `CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG` |
+| Transaction | https://stellar.expert/explorer/testnet/tx/8cf2dccc38f490a12b6bdcf20bebbf479d5c7b04b251401ad858758737601405 |
+| Live App | https://fluppy.vercel.app |
+| GitHub | https://github.com/dzakwannajmi/Fluppy |
+| Demo | *(https://fluppy.vercel.app/)* |
+
+---
 
 ## 📜 License
 
-This frontend client is open-source and released under the **MIT License**.
+MIT

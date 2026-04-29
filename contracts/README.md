@@ -1,57 +1,203 @@
-# 🦀 Fluppy Smart Contract (Soroban)
+# 🔐 Security Policy — Fluppy Protocol
 
-This directory contains the core financial logic of the Fluppy protocol. The contract is designed to handle privacy-preserving payments through **Zero-Knowledge Membership Proofs** and automated **USDC atomic splits**.
+## Overview
 
----
+Fluppy is a privacy-preserving payment protocol on Stellar Soroban that combines
+Zero-Knowledge Membership Proofs with atomic USDC settlement. This document describes
+the security model, implemented protections, known limitations, threat model, and
+responsible disclosure policy.
 
-### 🛡️ Security & Engineering Standards
-
-#### **1. Formal Verification through Unit Testing**
-The contract includes a comprehensive test suite to ensure state integrity and adversarial resilience.
-* **Coverage**: Initialization locks, atomic split precision, and circuit breaker (pause) logic.
-* **Execution**: 
-  ```bash
-  cargo test -- --nocapture
-  ```
-
-#### **2. Financial Logic: Atomic Split**
-The revenue distribution is hardcoded to ensure a trustless settlement between stakeholders:
-$$\text{Merchant Share} = \text{Amount} \times 95\%$$
-$$\text{Protocol Fee} = \text{Amount} \times 5\%$$
-*Executed as a single atomic operation via the Stellar Asset Contract (SAC) interface.*
-
-#### **3. Privacy Architecture**
-Instead of storing sensitive user data, the contract utilizes a **32-byte Merkle Root**. Verification is performed in $O(\log n)$, ensuring that the protocol remains gas-efficient even with a large user whitelist.
+> ⚠️ **Testnet Status Notice**
+> Fluppy is currently deployed on Stellar Testnet only. The on-chain ZK verifier
+> is a testnet implementation. Do NOT use this protocol for real financial transactions
+> until the mainnet audit is complete and this notice is removed.
 
 ---
 
-### 📑 Contract Functions Reference
+## 1. Implemented Security Controls
 
-| Function | Type | Description |
-| :--- | :--- | :--- |
-| `initialize` | Write | Anchors the Admin, USDC Asset ID, and Treasury address. (One-time only). |
-| `pay_with_zk` | Write | Validates ZK-Proof and executes the 95/5 fund bifurcation. |
-| `set_pause` | Admin | Triggers the circuit breaker to halt all financial operations. |
-| `is_paused` | Read | Returns the current operational status of the protocol. |
+### 1.1 One-Time Initialization Lock
+
+The `initialize()` function uses a sentinel storage key to prevent re-initialization.
+Any attempt to call it a second time triggers an immediate `panic!`, making the
+treasury address, USDC asset ID, and admin address permanently immutable after
+the first deployment.
+
+```rust
+if env.storage().instance().has(&DataKey::Config) {
+    panic!("Contract already initialized");
+}
+```
+
+**Guarantee:** Protocol treasury routing cannot be redirected post-deployment,
+even by the contract admin.
+
+### 1.2 Caller Authentication (`require_auth`)
+
+Every `pay_with_zk` invocation requires the `from` address to sign the transaction
+via Freighter. This is enforced by Soroban's native `Address::require_auth()` before
+any fund transfer occurs.
+
+```rust
+from.require_auth();
+```
+
+**Guarantee:** A third party cannot submit a payment on behalf of a user without
+explicit wallet signature.
+
+### 1.3 Circuit Breaker (Emergency Pause)
+
+An admin-controlled pause mechanism halts all `pay_with_zk` operations without
+requiring contract redeployment. The `is_paused` state is checked as the first
+operation in every payment flow.
+
+```rust
+check_if_paused(&env)?;
+```
+
+### 1.4 Hardcoded 95/5 Split
+
+The revenue split is hardcoded at compile time — not configurable via parameters.
+
+```rust
+let merchant_amt = (amount * 95) / 100;
+let treasury_amt = amount - merchant_amt;
+```
+
+### 1.5 Off-Chain Identity Isolation
+
+No raw user identity is stored on-chain. Only a Merkle root is recorded.
+
+### 1.6 Structured Error Codes
+
+```rust
+pub enum FluppyError {
+    UnauthorizedMember = 1,
+    InsufficientBalance = 2,
+    ContractPaused = 3,
+    NotAdmin = 4,
+    InvalidPaymentAmount = 5,
+    Overflow = 6,
+}
+```
 
 ---
 
-### 🚀 Technical Prerequisites
-* **Toolchain**: `rust-std` wasm32-unknown-unknown.
-* **Environment**: Soroban SDK v25.3.1.
-* **Optimization**: Built with `release` profile to minimize WASM footprint.
+## 2. Known Limitations (Testnet Phase)
+
+### 2.1 ⚠️ Nullifier Not Implemented (HIGH)
+
+Replay attacks are currently possible.
+
+**Planned fix:**
+
+```rust
+if env.storage().persistent().has(&DataKey::Nullifier(zk_proof.nullifier.clone())) {
+    return Err(FluppyError::NullifierAlreadyUsed);
+}
+env.storage().persistent().set(
+    &DataKey::Nullifier(zk_proof.nullifier.clone()),
+    &true
+);
+```
 
 ---
 
----
-### ✅ Technical Validation Results
-The Fluppy smart contract has undergone rigorous unit testing to ensure financial and logic integrity.
+### 2.2 ⚠️ Verifier Stub (HIGH)
 
-- **Total Tests**: 4
-- **Status**: 100% Passed
-- **Coverage**:
-  1. `test_initialization`: Verifies secure state anchoring.
-  2. `test_re_initialization_fails`: Confirms protection against unauthorized state overrides (Security Lock).
-  3. `test_successful_atomic_split_payment`: Validates the precision of the 95/5 USDC revenue bifurcation.
-  4. `test_circuit_breaker_pause_logic`: Ensures administrative control over protocol operations.
-  ---
+ZK proofs are not cryptographically verified on-chain.
+
+**Planned fix:**
+
+```rust
+bn254::pairing_check(env, &[...])
+```
+
+---
+
+### 2.3 ⚠️ Static Whitelist (MEDIUM)
+
+Hardcoded whitelist.
+
+---
+
+### 2.4 ℹ️ Serialization Risks (LOW)
+
+Edge cases in proof encoding still under testing.
+
+---
+
+## 3. Threat Model
+
+### Assets
+
+| Asset | Protection |
+|---|---|
+| Funds | require_auth |
+| Identity | Off-chain |
+| Treasury | Immutable |
+| Availability | Pause |
+
+### Trust Boundary
+
+```
+UNTRUSTED → TRUSTED
+User input → Contract verification
+Proof → On-chain logic
+```
+
+### Threats
+
+| Threat | Status |
+|---|---|
+| Replay | ❌ |
+| Forgery | ❌ |
+| Front-run | ✅ |
+| Overflow | ✅ |
+
+---
+
+## 4. ZK Security Properties
+
+- Merkle membership proof only
+- No payment logic in circuit
+- Poseidon2 hashing (BN254)
+
+---
+
+## 5. Test Coverage
+
+```
+4 tests — all passing
+```
+
+Gaps:
+- No replay test
+- No pairing test
+
+---
+
+## 6. Mainnet Checklist
+
+- [ ] Nullifier
+- [ ] Pairing check
+- [ ] Audit
+- [ ] Root update
+- [ ] Replay protection
+
+---
+
+## 7. Disclosure
+
+**Email:** repmoonasci@gmail.com  
+Response within 48 hours.
+
+---
+
+## 8. Changelog
+
+| Version | Date | Change |
+|---|---|---|
+| 0.1.0 | 2025-04-29 | Initial |
+
+---
