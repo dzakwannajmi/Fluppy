@@ -1,21 +1,23 @@
 import type { NextConfig } from "next";
 
-const nextConfig = {
-  headers: async () => [
-    {
-      source: "/(.*)",
-      headers: [
-        { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-        { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
-      ],
-    },
-  ],
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+        ],
+      },
+    ];
+  },
 
   outputFileTracingIncludes: {
-    '/api/**/*': ['./public/circuit/**/*'],
+    "/api/**/*": ["./public/circuit/**/*"],
   },
-  serverExternalPackages: ['snarkjs'],
 
+  serverExternalPackages: ["snarkjs"],
 };
 
 export default nextConfig;
