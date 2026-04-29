@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { generateZkProof } from '@/src/lib/zkp';
+export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
@@ -7,6 +8,7 @@ export async function POST(req: Request) {
     const WHITELIST = ["2410010454", "2410010001"];
 
     const proof = await generateZkProof(secret, WHITELIST, destination, BigInt(amount));
+
 
     return NextResponse.json({ success: true, proof });
   } catch (error: any) {
