@@ -232,7 +232,7 @@ function Hero() {
         
         {/* Live status pill */}
         <motion.a
-          href="https://stellar.expert/explorer/testnet/contract/CDDVG5GDT7E4HSGKSYFXRSAWEGINCAMOX33THIBVXYUH3R7UE2ET7XY6B"
+          href="https://stellar.expert/explorer/testnet/contract/CB3OW27PKHMRL4JAWU5NKLFIFVUSDNIP7VOTUGCUM5E66BPO5HYTCORG"
           target="_blank"
           rel="noopener noreferrer"
           initial={{ opacity: 0, y: -8 }}
