@@ -1,15 +1,20 @@
 [package]
-name = "fluppy"
-version = "0.0.0"
 edition = "2021"
+name = "fluppy"
 publish = false
+version = "0.1.0"
 
 [lib]
 crate-type = ["lib", "cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { workspace = true }
+soroban-sdk = {version = "26.0.0"}
 
 [dev-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils"] }
+soroban-sdk = {version = "26.0.0", features = ["testutils"]}
+
+[features]
+bn254_native = [] # enable production pairing check (requires SDK support)
+default = []
+testutils = ["soroban-sdk/testutils"]

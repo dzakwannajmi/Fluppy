@@ -1,127 +1,40 @@
-use soroban_sdk::{symbol_short, token::Client as TokenClient, Address, Bytes, BytesN, Env, Vec};
+use soroban_sdk::{contractevent, token, xdr::ToXdr, Address, Bytes, BytesN, Env, Vec};
 
-use crate::{DataKey, FLuppyError};
+use crate::errors::FluppyError;
+use crate::verifier::{self, Proof, PublicInputs};
+use crate::DataKey;
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
 
-/// Number of public signals for FluppyPayment(20).
-/// Order: [nullifier, verifiedRoot, merkleRoot, recipientHash, minAmount, maxAmount]
-const N_PUBLIC: u32 = 6;
+/// Must match verifier::N_PUBLIC exactly.
+const N_PUBLIC: usize = 7;
 
-/// 95% merchant share — numerator for checked arithmetic.
-const MERCHANT_BPS: i128 = 95;
-/// 5% treasury share — numerator for checked arithmetic.
-const TREASURY_BPS: i128 = 5;
-const BPS_DENOM: i128 = 100;
+// Public signal indices — SnarkJS output order (outputs before declared inputs)
+const IDX_NULLIFIER: u32 = 0; // circuit output  — one-time spend tag
+const IDX_VERIFIED_ROOT: u32 = 1; // circuit output  — root re-derived inside circuit
+const IDX_MERKLE_ROOT: u32 = 2; // declared public — authorised whitelist root
+const IDX_RECIPIENT_HASH: u32 = 3; // declared public — hash of merchant address
+const IDX_MIN_AMOUNT: u32 = 4; // declared public — lower payment bound
+const IDX_MAX_AMOUNT: u32 = 5; // declared public — upper payment bound
+const IDX_CHAIN_ID: u32 = 6;
 
-/// Nullifier TTL: extend to ~300 days (5-second ledgers).
-/// Source: contracts-soroban.md — persistent TTL management.
-/// A spent nullifier MUST NOT be allowed to archive — expiry = replay vector.
-const NULLIFIER_TTL_MIN: u32 = 518_400; // ~30 days
-const NULLIFIER_TTL_EXTEND: u32 = 5_184_000; // ~300 days
+// ─────────────────────────────────────────────────────────────────────────────
+// Public entry point
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ─── Index aliases (documentation only — enforced by position) ────────────────
-const IDX_NULLIFIER: u32 = 0;
-const IDX_VERIFIED_ROOT: u32 = 1;
-const IDX_MERKLE_ROOT: u32 = 2;
-const IDX_RECIPIENT_HASH: u32 = 3;
-const IDX_MIN_AMOUNT: u32 = 4;
-const IDX_MAX_AMOUNT: u32 = 5;
-
-// ─── Mock verifier ────────────────────────────────────────────────────────────
-
-/// REPLACE WITH REAL BN254 VERIFY (CAP-0074)
-///
-/// Signature is forward-compatible with the real Groth16 verifier in verify.rs.
-/// When CAP-0074 is live on the target network, swap this body for:
-///   `verify_groth16_proof(env, pi_a, pi_b, pi_c, public_inputs)`
-///
-/// Source: zk-proofs.md — verification gateway, policy-and-proof split.
-#[allow(unused_variables)]
-fn mock_verify(
-    env: &Env,
-    pi_a: &Bytes,
-    pi_b: &Bytes,
-    pi_c: &Bytes,
-    public_inputs: &Vec<BytesN<32>>,
-) -> bool {
-    // REPLACE WITH REAL BN254 VERIFY (CAP-0074)
-    true
+#[contractevent]
+pub struct PaymentExecuted {
+    pub sender: Address,
+    pub merchant: Address,
+    pub amount: i128,
+    pub merchant_amt: i128,
+    pub treasury_amt: i128,
+    pub nullifier: BytesN<32>,
+    pub timestamp: u64,
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Reads a required value from instance storage.
-/// Panics with a clear message if the contract was not initialized.
-/// Source: contracts-soroban.md — fail fast on missing config.
-fn load_instance<T: soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>(env: &Env, key: &DataKey) -> T {
-    env.storage()
-        .instance()
-        .get(key)
-        .unwrap_or_else(|| panic!("not initialized"))
-}
-
-/// Interprets a 32-byte big-endian BytesN<32> as an i128 amount (lower 16 bytes).
-/// The circuit uses 64-bit range checks, so only bytes [16..32] carry meaningful data.
-/// Upper bytes [0..16] must be zero for a valid circuit output.
-///
-/// Source: SOW — amounts are stroops (i128); circuit bounds are 64-bit.
-fn bytes32_to_i128(b: &BytesN<32>) -> i128 {
-    let raw = b.to_array();
-    // Reject any value where the upper 16 bytes are non-zero.
-    // Circuit LessEqThan(64) guarantees this for valid proofs; we enforce it
-    // defensively here to prevent type confusion attacks.
-    for byte in &raw[0..16] {
-        if *byte != 0 {
-            // Non-zero upper bytes → amount would exceed i128::MAX.
-            // This cannot happen with a valid Circom proof but must be caught
-            // defensively against malformed frontend inputs.
-            panic!("amount overflow: upper bytes non-zero");
-        }
-    }
-    let mut buf = [0u8; 16];
-    buf.copy_from_slice(&raw[16..32]);
-    i128::from_be_bytes(buf)
-}
-
-/// Computes `Poseidon(address_bytes)` to match the circuit's recipientHash signal.
-///
-/// NOTE: Until CAP-0075 (Poseidon2 host function) is available, we use SHA-256
-/// as a structural placeholder. You MUST align this with the off-chain hash used
-/// in `zkp.ts` when computing `recipientHash = Poseidon(recipientAddr)`.
-///
-/// REPLACE WITH env.crypto().poseidon2(...) WHEN CAP-0075 IS LIVE.
-///
-/// Source: zk-proofs.md — recipient integrity check.
-fn hash_address(env: &Env, addr: &Address) -> BytesN<32> {
-    use soroban_sdk::xdr::ToXdr;
-    let raw: soroban_sdk::Bytes = addr.to_xdr(env);
-
-    let mut hash_bytes = env.crypto().sha256(&raw).to_array();
-
-    hash_bytes[0] = 0;
-
-    BytesN::from_array(env, &hash_bytes)
-}
-// ─── Core function ────────────────────────────────────────────────────────────
-
-/// Executes a ZK-verified USDC payment with atomic 95/5 fee split.
-///
-/// STRICT EXECUTION ORDER (must not be reordered — security invariant):
-///   1. Validate public_inputs length
-///   2. Extract all signal fields
-///   3. Consistency checks (recipient hash, amount bounds)
-///   4. Nullifier uniqueness check  ← fail before any crypto cost
-///   5. ZK proof verification      ← mock now, real BN254 later
-///   6. sender.require_auth()      ← authorize USDC debit
-///   7. USDC atomic split (95% merchant, 5% treasury)
-///   8. Mark nullifier spent       ← AFTER transfer succeeds
-///   9. Emit audit event
-///
-/// Source: security.md §6 — atomic check-and-use, no state-change gaps.
-/// Source: security.md §4 — all arithmetic is checked.
-/// Source: contracts-soroban.md — SAC TokenClient, events, persistent TTL.
-/// Source: zk-proofs.md — verification gateway, anti-replay binding.
 pub fn execute_payment(
     env: Env,
     sender: Address,
@@ -131,124 +44,189 @@ pub fn execute_payment(
     pi_b: Bytes,
     pi_c: Bytes,
     public_inputs: Vec<BytesN<32>>,
-) -> Result<(), FLuppyError> {
-    // ── 1. Validate public_inputs length ──────────────────────────────────
-    // Reject before touching any storage — cheapest possible failure.
-    // Source: security.md §7 — validate all external data first.
-    if public_inputs.len() != N_PUBLIC {
-        return Err(FLuppyError::InvalidInputCount);
+) -> Result<(), FluppyError> {
+    // ── 1. Circuit breaker ─────────────────────────────────────────────────
+    // Calls pub(crate) fn in lib.rs via crate::
+    crate::check_not_paused(&env)?;
+
+    // ── 2. Public input count ──────────────────────────────────────────────
+    if public_inputs.len() as usize != N_PUBLIC {
+        return Err(FluppyError::InvalidInputCount);
     }
 
-    // ── 2. Extract public signals (order is a security invariant) ─────────
-    // IDX_* constants document which Circom signal maps to which slot.
-    // Mismatch here would cause a valid proof to authorize the wrong payment.
-    let nullifier: BytesN<32> = public_inputs.get(IDX_NULLIFIER).unwrap();
-    let verified_root: BytesN<32> = public_inputs.get(IDX_VERIFIED_ROOT).unwrap();
-    let merkle_root: BytesN<32> = public_inputs.get(IDX_MERKLE_ROOT).unwrap();
-    let recipient_hash: BytesN<32> = public_inputs.get(IDX_RECIPIENT_HASH).unwrap();
-    let min_amount_b: BytesN<32> = public_inputs.get(IDX_MIN_AMOUNT).unwrap();
-    let max_amount_b: BytesN<32> = public_inputs.get(IDX_MAX_AMOUNT).unwrap();
-
-    // ── 3a. Recipient integrity — Hash(merchant) MUST equal recipientHash ─
-    // Prevents an attacker from proving a valid payment to recipient A but
-    // routing funds to merchant B by swapping the `merchant` argument.
-    // Source: security.md §7 — untrusted external arguments.
-    let expected_hash = hash_address(&env, &merchant);
-    if expected_hash != recipient_hash {
-        return Err(FLuppyError::RecipientMismatch);
-    }
-
-    // ── 3b. Validate verifiedRoot == merkleRoot ───────────────────────────
-    // The circuit already constrains this, but we re-check on-chain to
-    // catch any mismatch introduced by a malformed proof or buggy frontend.
-    if verified_root != merkle_root {
-        return Err(FLuppyError::RecipientMismatch);
-    }
-
-    // ── 3c. Amount bounds ─────────────────────────────────────────────────
-    // Convert circuit bounds (BytesN<32>) back to i128 for comparison.
-    // Source: security.md §4 — validate inputs, no unchecked arithmetic.
+    // ── 3. Amount sanity ───────────────────────────────────────────────────
     if amount <= 0 {
-        return Err(FLuppyError::InvalidAmount);
-    }
-    let min_amount = bytes32_to_i128(&min_amount_b);
-    let max_amount = bytes32_to_i128(&max_amount_b);
-    if amount < min_amount || amount > max_amount {
-        return Err(FLuppyError::AmountOutOfBounds);
+        return Err(FluppyError::InvalidAmount);
     }
 
-    // ── 4. Nullifier uniqueness check ─────────────────────────────────────
-    // Checked BEFORE proof verification — reject cheaply if already spent.
-    // Source: zk-proofs.md — anti-replay binding.
-    // Source: security.md §6 — fail fast before expensive operations.
+    // ── 4. Extract typed public signals ────────────────────────────────────
+    let nullifier = public_inputs.get(IDX_NULLIFIER).unwrap();
+    let verified_root = public_inputs.get(IDX_VERIFIED_ROOT).unwrap();
+    let proof_root = public_inputs.get(IDX_MERKLE_ROOT).unwrap();
+    let recipient_hash = public_inputs.get(IDX_RECIPIENT_HASH).unwrap();
+    let min_amount_sig = public_inputs.get(IDX_MIN_AMOUNT).unwrap();
+    let max_amount_sig = public_inputs.get(IDX_MAX_AMOUNT).unwrap();
+    let chain_id_signal = public_inputs.get(IDX_CHAIN_ID).unwrap();
+
+    // ── 5. Merkle root integrity ────────────────────────────────────────────
+    // The proof's merkleRoot signal must match the root stored in contract state.
+    // Prevents proof re-use against a stale or different whitelist.
+    let stored_root: BytesN<32> = env
+        .storage()
+        .instance()
+        .get(&DataKey::MerkleRoot)
+        .ok_or(FluppyError::NotInitialized)?;
+
+    if proof_root != stored_root {
+        return Err(FluppyError::RootMismatch);
+    }
+
+    // ── 6. Circuit self-consistency ────────────────────────────────────────
+    // The circuit re-derives verifiedRoot from the Merkle path.
+    // It must equal the declared merkleRoot — any mismatch means
+    // the prover used a different path than the committed root.
+    if verified_root != proof_root {
+        return Err(FluppyError::CircuitRootMismatch);
+    }
+
+    // ── 7. Recipient integrity ─────────────────────────────────────────────
+    // The circuit commits to the merchant address via recipientHash.
+    // Recompute here to ensure proof cannot be re-used for a different merchant.
+
+    // ── 8. Chain binding integrity ────────────────────────────────────────
+    // Prevents cross-network proof replay (testnet ↔ mainnet).
+    let expected_chain = compute_chain_id(&env);
+    let expected_hash = compute_recipient_hash(&env, &merchant);
+    if recipient_hash != expected_hash {
+        return Err(FluppyError::RecipientMismatch);
+    }
+
+    // Prevent cross-network proof replay
+    if chain_id_signal != expected_chain {
+        return Err(FluppyError::ChainIdMismatch);
+    }
+
+    // ── 9. Nullifier replay protection ─────────────────────────────────────
+    // Each proof has a unique nullifier. Once spent, reject all re-submissions.
     let nullifier_key = DataKey::Nullifier(nullifier.clone());
-    if env.storage().persistent().has(&nullifier_key) {
-        return Err(FLuppyError::NullifierSpent);
+    if env.storage().temporary().has(&nullifier_key) {
+        return Err(FluppyError::NullifierSpent);
     }
 
-    // ── 5. ZK proof verification ──────────────────────────────────────────
-    // REPLACE mock_verify WITH REAL BN254 VERIFY (CAP-0074) WHEN AVAILABLE.
-    // Source: zk-proofs.md — verification gateway.
-    if !mock_verify(&env, &pi_a, &pi_b, &pi_c, &public_inputs) {
-        return Err(FLuppyError::InvalidProof);
-    }
+    // ── 9. Groth16 pairing verification ────────────────────────────────────
+    // Convert Bytes → BytesN<N> with length validation.
+    let pi_a_n: BytesN<64> = pi_a.try_into().map_err(|_| FluppyError::InvalidProof)?;
+    let pi_b_n: BytesN<128> = pi_b.try_into().map_err(|_| FluppyError::InvalidProof)?;
+    let pi_c_n: BytesN<64> = pi_c.try_into().map_err(|_| FluppyError::InvalidProof)?;
 
-    // ── 6. Authorize sender ───────────────────────────────────────────────
-    // Called AFTER proof verification so an invalid proof fails before the
-    // wallet signature prompt is ever reached (better UX + saves auth cost).
-    // Source: contracts-soroban.md — explicit authorization.
-    // Source: security.md §1 — missing auth check pattern.
+    // In test builds: mock always returns Ok(()).
+    // In production with --features bn254: real BN254 pairing check.
+    let proof = Proof {
+        pi_a: pi_a_n,
+        pi_b: pi_b_n,
+        pi_c: pi_c_n,
+    };
+
+    let public_inputs = PublicInputs {
+        nullifier: &nullifier,
+        verified_root: &verified_root,
+        merkle_root: &proof_root,
+        recipient_hash: &recipient_hash,
+        min_amount: &min_amount_sig,
+        max_amount: &max_amount_sig,
+        chain_id: &chain_id_signal,
+    };
+
+    verifier::verify_proof(&env, &proof, &public_inputs).map_err(|_| FluppyError::InvalidProof)?;
+
+    // ── 10. Mark nullifier spent ───────────────────────────────────────────
+    // Temporary storage: cheaper than persistent, auto-expires after max TTL.
+    env.storage().temporary().set(&nullifier_key, &true);
+
+    // ── 11. Atomic 95/5 split transfer ─────────────────────────────────────
+    let fee_bps: i128 = env
+        .storage()
+        .instance()
+        .get(&DataKey::FeePercent)
+        .unwrap_or(500_i128);
+
+    let treasury: Address = env.storage().instance().get(&DataKey::Treasury).unwrap();
+    let usdc_token: Address = env.storage().instance().get(&DataKey::UsdcToken).unwrap();
+
+    let (merchant_amt, treasury_amt) = calculate_split(amount, fee_bps)?;
+
+    // sender must authorise the two token transfers
     sender.require_auth();
+    let client = token::TokenClient::new(&env, &usdc_token);
+    client.transfer(&sender, &merchant, &merchant_amt);
+    client.transfer(&sender, &treasury, &treasury_amt);
 
-    // ── 7. Atomic USDC split (95% merchant, 5% treasury) ──────────────────
-    // Loaded from immutable instance storage — not from caller arguments.
-    // Source: SOW — 95/5 atomic split.
-    // Source: security.md §3 — SAC address from trusted storage, not args.
-    let usdc_token: Address = load_instance(&env, &DataKey::UsdcToken);
-    let treasury: Address = load_instance(&env, &DataKey::Treasury);
+    // ── 12. Emit payment event ─────────────────────────────────────────────
+    let timestamp = env.ledger().timestamp();
 
-    let fee = amount
-        .checked_mul(TREASURY_BPS)
-        .and_then(|v| v.checked_div(BPS_DENOM))
-        .ok_or(FLuppyError::ArithmeticOverflow)?;
-
-    let merchant_amount = amount
-        .checked_sub(fee)
-        .ok_or(FLuppyError::ArithmeticOverflow)?;
-
-    let token = TokenClient::new(&env, &usdc_token);
-
-    // Both transfers happen in the same ledger entry — atomic by design.
-    // If either panics, the entire transaction rolls back.
-    token.transfer(&sender, &merchant, &merchant_amount);
-    token.transfer(&sender, &treasury, &fee);
-
-    // ── 8. Mark nullifier spent ───────────────────────────────────────────
-    // Marked AFTER transfers succeed. If a transfer panics (e.g. insufficient
-    // balance), the nullifier stays fresh so the user can retry after funding.
-    // TTL extended aggressively — archival of a spent nullifier = replay vuln.
-    // Source: zk-proofs.md — persistent anti-replay guard.
-    // Source: contracts-soroban.md — persistent TTL management.
-    env.storage().persistent().set(&nullifier_key, &true);
-    env.storage()
-        .persistent()
-        .extend_ttl(&nullifier_key, NULLIFIER_TTL_MIN, NULLIFIER_TTL_EXTEND);
-
-    // ── 9. Emit audit event ───────────────────────────────────────────────
-    // Source: contracts-soroban.md — events for auditable state changes.
-    // Source: README.md — Fluppy emits total_amount, merchant_receive, fee, ts.
-    env.events().publish(
-        (symbol_short!("zkpay"),),
-        (
-            nullifier,
-            sender,
-            merchant,
-            amount,
-            merchant_amount,
-            fee,
-            merkle_root,
-        ),
-    );
+    PaymentExecuted {
+        sender: sender.clone(),
+        merchant: merchant.clone(),
+        amount,
+        merchant_amt,
+        treasury_amt,
+        nullifier: nullifier.clone(),
+        timestamp,
+    }
+    .publish(&env);
 
     Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers (private to this module unless marked pub(crate))
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Splits `amount` into (merchant_amount, treasury_amount) using basis points.
+/// Uses checked arithmetic — returns ArithmeticOverflow instead of panicking.
+pub(crate) fn calculate_split(amount: i128, fee_bps: i128) -> Result<(i128, i128), FluppyError> {
+    let treasury_amt = amount
+        .checked_mul(fee_bps)
+        .ok_or(FluppyError::ArithmeticOverflow)?
+        .checked_div(10_000)
+        .ok_or(FluppyError::ArithmeticOverflow)?;
+    let merchant_amt = amount
+        .checked_sub(treasury_amt)
+        .ok_or(FluppyError::ArithmeticOverflow)?;
+    Ok((merchant_amt, treasury_amt))
+}
+
+/// Computes a BN254-safe chain identifier from the Stellar network id.
+///
+/// MUST stay identical with computeChainId() in zkp.ts.
+///
+/// Current approach:
+/// - use ledger network_id()
+/// - zero most-significant byte
+/// - resulting value always fits BN254 field
+pub(crate) fn compute_chain_id(env: &Env) -> BytesN<32> {
+    let network_id = env.ledger().network_id();
+
+    let mut bytes = network_id.to_array();
+
+    // zero MSB → guarantee < BN254_R
+    bytes[0] = 0;
+
+    BytesN::from_array(env, &bytes)
+}
+
+#[cfg(test)]
+pub(crate) fn compute_chain_id_pub(env: &Env) -> BytesN<32> {
+    compute_chain_id(env)
+}
+
+pub(crate) fn compute_recipient_hash(env: &Env, addr: &Address) -> BytesN<32> {
+    let xdr = addr.to_xdr(env);
+
+    let mut hash = env.crypto().sha256(&xdr).to_array();
+
+    // zero MSB → result always < BN254_R
+    hash[0] = 0;
+
+    BytesN::from_array(env, &hash)
 }
