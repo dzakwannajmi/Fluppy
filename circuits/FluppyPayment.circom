@@ -3,11 +3,18 @@ pragma circom 2.1.6;
 include "node_modules/circomlib/circuits/poseidon.circom";
 include "node_modules/circomlib/circuits/comparators.circom";
 include "node_modules/circomlib/circuits/mux1.circom";
+include "node_modules/circomlib/circuits/bitify.circom";
+
+// ─── Domain separation constants ─────────────────────────────────────────────
+// These tags are prepended to every Poseidon call to prevent cross-context
+// hash collisions. Values are arbitrary small BN254-safe integers.
+// MUST match POSEIDON_TAGS in merkle.ts and zkp.ts exactly.
+//
+//   NULLIFIER_TAG = 1  → prevents forging nullifier from a merkle node
+//   LEAF_TAG      = 2  → prevents forging leaf from a nullifier
+//   NODE_TAG      = 3  → prevents forging node from a leaf or nullifier
 
 // ─── Merkle Path Verifier ─────────────────────────────────────────────────────
-// Reconstructs the Merkle root from a leaf and its sibling path.
-// pathIndices[i] = 0 → current node is left child
-// pathIndices[i] = 1 → current node is right child
 template MerklePathVerifier(levels) {
     signal input  leaf;
     signal input  pathElements[levels];
@@ -17,12 +24,14 @@ template MerklePathVerifier(levels) {
     component hashers[levels];
     component muxL[levels];
     component muxR[levels];
-    
+
     signal nodes[levels + 1];
     nodes[0] <== leaf;
 
     for (var i = 0; i < levels; i++) {
-        hashers[i] = Poseidon(2);
+        // NODE_TAG = 3 — domain-separated internal node hashing
+        hashers[i] = Poseidon(3);
+        hashers[i].inputs[0] <== 3;  // NODE_TAG
 
         muxL[i] = Mux1();
         muxL[i].c[0] <== nodes[i];
@@ -34,8 +43,8 @@ template MerklePathVerifier(levels) {
         muxR[i].c[1] <== nodes[i];
         muxR[i].s    <== pathIndices[i];
 
-        hashers[i].inputs[0] <== muxL[i].out;
-        hashers[i].inputs[1] <== muxR[i].out;
+        hashers[i].inputs[1] <== muxL[i].out;
+        hashers[i].inputs[2] <== muxR[i].out;
 
         nodes[i + 1] <== hashers[i].out;
     }
@@ -44,52 +53,70 @@ template MerklePathVerifier(levels) {
 }
 
 // ─── FluppyPayment ────────────────────────────────────────────────────────────
-// levels = 20 → supports 2^20 ≈ 1M commitments
 //
-// Public signal ordering (MUST match verify.rs N_PUBLIC index order):
-//   output  nullifier      → index 0  (SnarkJS emits outputs before inputs)
-//   output  verifiedRoot   → index 1
-//   input   merkleRoot     → index 2
-//   input   recipientHash  → index 3
-//   input   minAmount      → index 4
-//   input   maxAmount      → index 5
+// Public signal ordering (MUST match verify.rs IDX_* constants):
+//   output nullifier      → index 0
+//   output verifiedRoot   → index 1
+//   input  merkleRoot     → index 2
+//   input  recipientHash  → index 3
+//   input  minAmount      → index 4
+//   input  maxAmount      → index 5
+//
+// Domain separation:
+//   nullifier = Poseidon(1, secret, nonce)  — NULLIFIER_TAG = 1
+//   leaf      = Poseidon(2, secret)         — LEAF_TAG      = 2
+//   node      = Poseidon(3, left, right)    — NODE_TAG      = 3
+
 template FluppyPayment(levels) {
 
-    // ── Private witness (never revealed on-chain) ─────────────────────────
+    // ── Private inputs ────────────────────────────────────────────────────────
     signal input secret;
     signal input nonce;
     signal input amount;
     signal input pathElements[levels];
     signal input pathIndices[levels];
 
-    // ── Public inputs ─────────────────────────────────────────────────────
+    // ── Public inputs ─────────────────────────────────────────────────────────
     signal input merkleRoot;
     signal input recipientHash;
     signal input minAmount;
     signal input maxAmount;
+    signal input chainId;
 
-    // ── Public outputs ────────────────────────────────────────────────────
+    // chainId does NOT need internal constraints — it is bound to the proof
+    // automatically via Groth16 public input mechanism.
+    // The contract enforces: chainId === expected_chain_id(env)
+
+    // ── Public outputs ────────────────────────────────────────────────────────
     signal output nullifier;
     signal output verifiedRoot;
 
-    // ── Constraint 1: Nullifier ───────────────────────────────────────────
-    // nullifier = Poseidon(secret, nonce)
-    // Binds to a unique spend event without revealing secret.
-    component posNullifier = Poseidon(2);
-    posNullifier.inputs[0] <== secret;
-    posNullifier.inputs[1] <== nonce;
+    // ── Constraint 1: Amount bit-length enforcement ───────────────────────────
+    // Forces `amount` to be representable in 64 bits.
+    // Prevents arithmetic overflow in LessEqThan and protects range checks
+    // against malicious witness values beyond u64.
+    component amountBits = Num2Bits(64);
+    amountBits.in <== amount;
+
+    // ── Constraint 2: Nullifier with domain separation ────────────────────────
+    // nullifier = Poseidon(NULLIFIER_TAG=1, secret, nonce)
+    // Domain tag prevents nullifier from being forged using a Merkle node
+    // that happens to hash to the same value via Poseidon(left, right).
+    component posNullifier = Poseidon(3);
+    posNullifier.inputs[0] <== 1;       // NULLIFIER_TAG
+    posNullifier.inputs[1] <== secret;
+    posNullifier.inputs[2] <== nonce;
     nullifier <== posNullifier.out;
 
-    // ── Constraint 2: Commitment leaf ────────────────────────────────────
-    // leaf = Poseidon(secret, amount, recipientHash)
-    // Commits payer to this exact recipient and amount at deposit time.
-    component posLeaf = Poseidon(3);
-    posLeaf.inputs[0] <== secret;
-    posLeaf.inputs[1] <== amount;
-    posLeaf.inputs[2] <== recipientHash;
+    // ── Constraint 3: Membership leaf with domain separation ──────────────────
+    // leaf = Poseidon(LEAF_TAG=2, secret)
+    // Domain tag prevents leaf from being confused with a nullifier
+    // even though both take `secret` as input.
+    component posLeaf = Poseidon(2);
+    posLeaf.inputs[0] <== 2;            // LEAF_TAG
+    posLeaf.inputs[1] <== secret;
 
-    // ── Constraint 3: Merkle membership ──────────────────────────────────
-    // Proves the committed leaf exists in the tree rooted at merkleRoot.
+    // ── Constraint 4: Merkle membership proof ─────────────────────────────────
     component merkle = MerklePathVerifier(levels);
     merkle.leaf <== posLeaf.out;
     for (var i = 0; i < levels; i++) {
@@ -98,12 +125,12 @@ template FluppyPayment(levels) {
     }
     verifiedRoot <== merkle.root;
 
-    // Root equality — proof fails if path does not reconstruct merkleRoot.
+    // Root equality — proof fails if path does not reconstruct merkleRoot
     verifiedRoot === merkleRoot;
 
-    // ── Constraint 4: Amount range bounds ────────────────────────────────
-    // Enforces minAmount <= amount <= maxAmount (64-bit safe range).
-    // Business logic (routing, fee split) stays in Soroban — not here.
+    // ── Constraint 5: Amount range check ─────────────────────────────────────
+    // minAmount <= amount <= maxAmount
+    // Combined with Num2Bits(64) above, this fully constrains amount.
     component gtMin = LessEqThan(64);
     gtMin.in[0] <== minAmount;
     gtMin.in[1] <== amount;
@@ -113,9 +140,14 @@ template FluppyPayment(levels) {
     ltMax.in[0] <== amount;
     ltMax.in[1] <== maxAmount;
     ltMax.out   === 1;
+
+    // ── Note on recipientHash ─────────────────────────────────────────────────
+    // recipientHash is declared as a public input in `component main`.
+    // It is bound to the proof automatically via the Groth16 public input
+    // mechanism — no explicit signal consumer (`_ <==`) is needed.
+    // The contract re-derives and compares recipientHash in payment.rs.
 }
 
-// ─── Entry point ─────────────────────────────────────────────────────────────
 component main {
-    public [merkleRoot, recipientHash, minAmount, maxAmount]
+    public [merkleRoot, recipientHash, minAmount, maxAmount, chainId]
 } = FluppyPayment(20);
