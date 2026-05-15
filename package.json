@@ -1,0 +1,20 @@
+{
+  "name": "fluppy-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "app",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "scripts": {
+    "build:core": "pnpm --filter @fluppy/core build",
+    "build:app": "pnpm --filter frontend build",
+    "build": "pnpm build:core && pnpm build:app",
+    "typecheck": "pnpm --filter @fluppy/core typecheck && pnpm --filter frontend typecheck",
+    "test": "pnpm --filter @fluppy/core test"
+  }
+}
