@@ -39,4 +39,14 @@ export type {
   LoadArtifactOptions,
 } from './artifacts';
 
+export {
+  generateZkProof,
+  verifyProofLocally,
+} from './prover';
+
+export type {
+  GenerateZkProofInput,
+  ProofProgressCallback,
+} from './prover';
+
 export const FLUPPY_BROWSER_VERSION = '0.1.0';

@@ -1,3 +1,4 @@
+import { MerkleProof, PaymentProofOutput } from '@fluppy/core';
 export * from '@fluppy/core';
 
 interface BrowserMerkleProof {
@@ -64,6 +65,19 @@ declare function loadVerificationKey(options?: LoadArtifactOptions): Promise<unk
 declare function validateCircuitArtifacts(options?: LoadArtifactOptions): Promise<void>;
 declare function clearCircuitArtifactCache(): void;
 
+type ProofProgressCallback = (stage: string, pct: number) => void;
+interface GenerateZkProofInput {
+    readonly secret: string;
+    readonly merkleProof: MerkleProof;
+    readonly recipient: string;
+    readonly amount: bigint;
+    readonly networkPassphrase: string;
+    readonly onProgress?: ProofProgressCallback;
+    readonly signal?: AbortSignal;
+}
+declare function generateZkProof(input: GenerateZkProofInput): Promise<PaymentProofOutput>;
+declare function verifyProofLocally(proof: PaymentProofOutput): Promise<boolean>;
+
 /**
  * @fluppy/browser — Fluppy ZK Payment Protocol browser SDK.
  *
@@ -79,4 +93,4 @@ declare function clearCircuitArtifactCache(): void;
 
 declare const FLUPPY_BROWSER_VERSION = "0.1.0";
 
-export { type BrowserMerkleProof, type CircuitArtifactPaths, type CircuitArtifacts, type EnrollCommitmentResult, FLUPPY_BROWSER_VERSION, type LoadArtifactOptions, type MerkleClientOptions, clearCircuitArtifactCache, computeCommitment, enrollCommitment, getDefaultCircuitArtifactPaths, getMerkleProof, loadCircuitArtifacts, loadVerificationKey, validateCircuitArtifacts };
+export { type BrowserMerkleProof, type CircuitArtifactPaths, type CircuitArtifacts, type EnrollCommitmentResult, FLUPPY_BROWSER_VERSION, type GenerateZkProofInput, type LoadArtifactOptions, type MerkleClientOptions, type ProofProgressCallback, clearCircuitArtifactCache, computeCommitment, enrollCommitment, generateZkProof, getDefaultCircuitArtifactPaths, getMerkleProof, loadCircuitArtifacts, loadVerificationKey, validateCircuitArtifacts, verifyProofLocally };
