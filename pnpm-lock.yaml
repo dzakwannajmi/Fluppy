@@ -117,6 +117,31 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  packages/fluppy-browser:
+    dependencies:
+      '@fluppy/core':
+        specifier: workspace:*
+        version: link:../fluppy-core
+    devDependencies:
+      '@stellar/freighter-api':
+        specifier: ^4.0.0
+        version: 4.1.0
+      '@stellar/stellar-sdk':
+        specifier: ^13.0.0
+        version: 13.3.0
+      circomlibjs:
+        specifier: ^0.1.0
+        version: 0.1.7
+      snarkjs:
+        specifier: ^0.7.4
+        version: 0.7.6
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.14)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
   packages/fluppy-core:
     devDependencies:
       '@stellar/stellar-sdk':
@@ -1268,6 +1293,9 @@ packages:
     engines: {node: '>= 18'}
     peerDependencies:
       webpack: '>=5.0.0'
+
+  '@stellar/freighter-api@4.1.0':
+    resolution: {integrity: sha512-5iaENUG8AoSlBr771XVou4wjYxfcl+SRyFZydwwGEuHm1XGDu/HLXFifXbRFoU14/5rZYouycnv1uJCuFIeBxg==}
 
   '@stellar/freighter-api@6.0.1':
     resolution: {integrity: sha512-eqwakEqSg+zoLuPpSbKyrX0pG8DQFzL/J5GtbfuMCmJI+h+oiC9pQ5C6QLc80xopZQKdGt8dUAFCmDMNdAG95w==}
@@ -4993,6 +5021,11 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
+
+  '@stellar/freighter-api@4.1.0':
+    dependencies:
+      buffer: 6.0.3
+      semver: 7.8.0
 
   '@stellar/freighter-api@6.0.1':
     dependencies:

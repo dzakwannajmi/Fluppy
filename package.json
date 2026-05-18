@@ -13,8 +13,11 @@
   "scripts": {
     "build:core": "pnpm --filter @fluppy/core build",
     "build:app": "pnpm --filter frontend build",
-    "build": "pnpm build:core && pnpm build:app",
+    "build": "pnpm build:core && pnpm build:browser && pnpm build:app",
     "typecheck": "pnpm --filter @fluppy/core typecheck && pnpm --filter frontend typecheck",
-    "test": "pnpm --filter @fluppy/core test"
+    "test": "pnpm --filter @fluppy/core test",
+    "build:browser": "pnpm --filter @fluppy/browser build",
+    "typecheck:core": "pnpm --filter @fluppy/core typecheck",
+    "typecheck:browser": "pnpm --filter @fluppy/browser typecheck"
   }
 }
