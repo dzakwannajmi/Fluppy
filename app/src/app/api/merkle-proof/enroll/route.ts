@@ -1,21 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
+
 import { getCommitmentSource } from '../../../../lib/merkle-server/commitment-source';
 import { invalidateTreeCache } from '../../../../lib/merkle-server/tree-cache';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+interface EnrollResponse {
+  enrolled: number;
+  alreadyEnrolled: boolean;
+}
+
+interface ErrorResponse {
+  error: string;
+}
+
+function isMockEnrollmentAllowed(): boolean {
+  if (process.env.NODE_ENV === 'development') {
+    return true;
+  }
+
+  return process.env.ALLOW_MOCK_ENROLLMENT === 'true';
+}
+
+function normalizeCommitment(input: unknown): bigint | null {
+  if (typeof input !== 'string') {
+    return null;
+  }
+
+  if (!/^[0-9a-fA-F]{1,64}$/.test(input)) {
+    return null;
+  }
+
+  return BigInt(`0x${input}`);
+}
 
 /**
  * POST /api/merkle-proof/enroll
  *
- * DEVELOPMENT-ONLY endpoint to enroll a commitment.
- * In production, replace with authenticated admin endpoint
- * gated by JWT/API key and rate-limited.
- *
- * Request: { commitment: "hex" }
- * Response: { enrolled: number }  // new whitelist size
+ * Development/testnet endpoint for enrolling a commitment.
+ * Production should use an authenticated admin enrollment flow.
  */
-export async function POST(req: NextRequest) {
-  if (process.env.NODE_ENV !== 'development') {
+export async function POST(
+  req: NextRequest,
+): Promise<NextResponse<EnrollResponse | ErrorResponse>> {
+  if (!isMockEnrollmentAllowed()) {
     return NextResponse.json(
       { error: 'enrollment_disabled_in_production' },
       { status: 403 },
@@ -23,22 +52,33 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { commitment } = await req.json();
+    const body = await req.json() as {
+      commitment?: unknown;
+    };
 
-    if (typeof commitment !== 'string' || !/^[0-9a-fA-F]{1,64}$/.test(commitment)) {
+    const commitment = normalizeCommitment(body.commitment);
+
+    if (commitment === null) {
       return NextResponse.json(
         { error: 'invalid_commitment_format' },
         { status: 400 },
       );
     }
 
-    const source  = getCommitmentSource();
-    const bigVal  = BigInt('0x' + commitment);
-    source.add(bigVal);
-    invalidateTreeCache();
+    const source = getCommitmentSource();
+    const added = source.add(commitment);
 
-    return NextResponse.json({ enrolled: source.size() });
-  } catch (err) {
+    if (added) {
+      invalidateTreeCache();
+    }
+
+    return NextResponse.json({
+      enrolled: source.size(),
+      alreadyEnrolled: !added,
+    });
+  } catch (err: unknown) {
+    console.error('[/api/merkle-proof/enroll] error:', err);
+
     return NextResponse.json(
       { error: 'internal_server_error' },
       { status: 500 },
