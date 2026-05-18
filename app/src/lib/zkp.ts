@@ -14,23 +14,12 @@ import {
   hexSecretToFieldElement,
 } from '@fluppy/core';
 
-// ─────────────────────────────────────────────────────────────
-// CIRCUIT CONFIG
-// ─────────────────────────────────────────────────────────────
+import {
+  loadCircuitArtifacts,
+  loadVerificationKey,
+  validateCircuitArtifacts,
+} from '@fluppy/browser';
 
-const CIRCUIT_VERSION = 'v3';
-
-const CIRCUIT_BASE_PATH =
-  `/circuit/${CIRCUIT_VERSION}`;
-
-const WASM_PATH =
-  `${CIRCUIT_BASE_PATH}/fluppy_payment.wasm`;
-
-const ZKEY_PATH =
-  `${CIRCUIT_BASE_PATH}/circuit_final.zkey`;
-
-const VK_PATH =
-  `${CIRCUIT_BASE_PATH}/verification_key.json`;
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -67,17 +56,6 @@ export interface PaymentProofOutput {
   ];
 }
 
-interface CircuitArtifacts {
-  wasm: Uint8Array;
-  zkey: Uint8Array;
-}
-
-interface CachedArtifacts {
-  wasm: Uint8Array;
-  zkey: Uint8Array;
-  version: string;
-  loadedAt: number;
-}
 
 interface Groth16ProofResult {
   proof: {
@@ -97,13 +75,6 @@ interface Groth16ProofResult {
 
   publicSignals: string[];
 }
-
-// ─────────────────────────────────────────────────────────────
-// ARTIFACT CACHE
-// ─────────────────────────────────────────────────────────────
-
-let cachedArtifacts:
-  CachedArtifacts | null = null;
 
 // ─────────────────────────────────────────────────────────────
 // GENERATION LOCK
@@ -181,98 +152,6 @@ function createProgressUpdater(
         100,
       );
     },
-  };
-}
-
-async function validateArtifact(
-  path: string,
-): Promise<void> {
-  const response = await fetch(path, {
-    method: 'HEAD',
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `[ZKP] Missing artifact: ${path}`,
-    );
-  }
-}
-
-async function validateCircuitArtifacts(): Promise<void> {
-  await Promise.all([
-    validateArtifact(WASM_PATH),
-    validateArtifact(ZKEY_PATH),
-    validateArtifact(VK_PATH),
-  ]);
-}
-
-async function fetchArtifact(
-  path: string,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  const response = await fetch(path, {
-    cache: 'no-store',
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `[ZKP] Failed to fetch artifact: ${path}`,
-    );
-  }
-
-  const buffer =
-    await response.arrayBuffer();
-
-  return new Uint8Array(buffer);
-}
-
-async function loadArtifacts(
-  signal?: AbortSignal,
-): Promise<CircuitArtifacts> {
-  if (
-    cachedArtifacts &&
-    cachedArtifacts.version ===
-    CIRCUIT_VERSION
-  ) {
-    return {
-      wasm: cachedArtifacts.wasm,
-      zkey: cachedArtifacts.zkey,
-    };
-  }
-
-  console.info(
-    '[ZKP] Loading circuit artifacts...',
-  );
-
-  const [wasm, zkey] =
-    await Promise.all([
-      fetchArtifact(
-        WASM_PATH,
-        signal,
-      ),
-
-      fetchArtifact(
-        ZKEY_PATH,
-        signal,
-      ),
-    ]);
-
-  cachedArtifacts = {
-    wasm,
-    zkey,
-    version: CIRCUIT_VERSION,
-    loadedAt: Date.now(),
-  };
-
-  console.info(
-    `[ZKP] WASM=${wasm.byteLength} bytes | ZKEY=${zkey.byteLength} bytes`,
-  );
-
-  return {
-    wasm,
-    zkey,
   };
 }
 
@@ -390,7 +269,7 @@ export async function generateZkProof(
       5,
     );
 
-    await validateCircuitArtifacts();
+    await validateCircuitArtifacts({ signal });
 
     throwIfAborted(signal);
 
@@ -495,9 +374,9 @@ export async function generateZkProof(
     const {
       wasm,
       zkey,
-    } = await loadArtifacts(
+    } = await loadCircuitArtifacts({
       signal,
-    );
+    });
 
     throwIfAborted(signal);
 
@@ -600,26 +479,8 @@ export async function verifyProofLocally(
   proof: PaymentProofOutput,
 ): Promise<boolean> {
   try {
-    const vkRes = await fetch(
-      VK_PATH,
-      {
-        cache: 'no-store',
-        method: 'GET',
-        headers: {
-          'Cache-Control':
-            'no-cache',
-        },
-      },
-    );
-
-    if (!vkRes.ok) {
-      throw new Error(
-        '[ZKP] verification_key.json missing',
-      );
-    }
-
     const vKey =
-      await vkRes.json();
+      await loadVerificationKey();
 
     const reconstructed = {
       pi_a: [

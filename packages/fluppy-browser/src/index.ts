@@ -25,4 +25,18 @@ export type {
   MerkleClientOptions,
 } from './merkle-client';
 
+export {
+  clearCircuitArtifactCache,
+  getDefaultCircuitArtifactPaths,
+  loadCircuitArtifacts,
+  loadVerificationKey,
+  validateCircuitArtifacts,
+} from './artifacts';
+
+export type {
+  CircuitArtifacts,
+  CircuitArtifactPaths,
+  LoadArtifactOptions,
+} from './artifacts';
+
 export const FLUPPY_BROWSER_VERSION = '0.1.0';

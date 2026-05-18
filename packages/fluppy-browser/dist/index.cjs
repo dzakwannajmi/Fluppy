@@ -112,13 +112,134 @@ async function getMerkleProof(secret, options) {
   };
 }
 
+// src/artifacts.ts
+var CIRCUIT_VERSION = "v3";
+var BASE_PATH = `/circuit/${CIRCUIT_VERSION}`;
+var DEFAULT_PATHS = {
+  wasmPath: `${BASE_PATH}/fluppy_payment.wasm`,
+  zkeyPath: `${BASE_PATH}/circuit_final.zkey`,
+  verificationKeyPath: `${BASE_PATH}/verification_key.json`
+};
+var artifactCache = null;
+var verificationKeyCache = null;
+function resolvePaths(overrides) {
+  return {
+    wasmPath: overrides?.wasmPath ?? DEFAULT_PATHS.wasmPath,
+    zkeyPath: overrides?.zkeyPath ?? DEFAULT_PATHS.zkeyPath,
+    verificationKeyPath: overrides?.verificationKeyPath ?? DEFAULT_PATHS.verificationKeyPath
+  };
+}
+function createFetchInit(options, method = "GET") {
+  const init = {
+    method,
+    cache: options.cache ?? "no-store"
+  };
+  if (options.signal) {
+    init.signal = options.signal;
+  }
+  return init;
+}
+async function fetchBinaryArtifact(path, options) {
+  const response = await fetch(path, createFetchInit(options, "GET"));
+  if (!response.ok) {
+    throw new Error(
+      `[artifacts] Failed to load artifact: ${path} (HTTP ${response.status})`
+    );
+  }
+  const buffer = await response.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+async function fetchJsonArtifact(path, options) {
+  const response = await fetch(path, createFetchInit(options, "GET"));
+  if (!response.ok) {
+    throw new Error(
+      `[artifacts] Failed to load JSON artifact: ${path} (HTTP ${response.status})`
+    );
+  }
+  return await response.json();
+}
+async function checkArtifactExists(path, options) {
+  const headResponse = await fetch(
+    path,
+    createFetchInit(options, "HEAD")
+  ).catch(() => null);
+  if (headResponse?.ok) {
+    return;
+  }
+  const getResponse = await fetch(
+    path,
+    createFetchInit(options, "GET")
+  );
+  if (!getResponse.ok) {
+    throw new Error(
+      `[artifacts] Artifact not found: ${path} (HTTP ${getResponse.status}). Ensure app/public/circuit/${CIRCUIT_VERSION}/ contains the correct files.`
+    );
+  }
+}
+function getDefaultCircuitArtifactPaths() {
+  return { ...DEFAULT_PATHS };
+}
+async function loadCircuitArtifacts(options = {}) {
+  if (artifactCache?.version === CIRCUIT_VERSION) {
+    return {
+      wasm: artifactCache.wasm,
+      zkey: artifactCache.zkey
+    };
+  }
+  const paths = resolvePaths(options.paths);
+  console.info("[artifacts] Loading circuit artifacts...");
+  const [wasm, zkey] = await Promise.all([
+    fetchBinaryArtifact(paths.wasmPath, options),
+    fetchBinaryArtifact(paths.zkeyPath, options)
+  ]);
+  artifactCache = {
+    wasm,
+    zkey,
+    version: CIRCUIT_VERSION,
+    loadedAt: Date.now()
+  };
+  console.info(
+    `[artifacts] Loaded: WASM=${wasm.byteLength} bytes | ZKEY=${zkey.byteLength} bytes`
+  );
+  return { wasm, zkey };
+}
+async function loadVerificationKey(options = {}) {
+  if (verificationKeyCache !== null) {
+    return verificationKeyCache;
+  }
+  const paths = resolvePaths(options.paths);
+  verificationKeyCache = await fetchJsonArtifact(
+    paths.verificationKeyPath,
+    options
+  );
+  return verificationKeyCache;
+}
+async function validateCircuitArtifacts(options = {}) {
+  const paths = resolvePaths(options.paths);
+  await Promise.all([
+    checkArtifactExists(paths.wasmPath, options),
+    checkArtifactExists(paths.zkeyPath, options),
+    checkArtifactExists(paths.verificationKeyPath, options)
+  ]);
+}
+function clearCircuitArtifactCache() {
+  artifactCache = null;
+  verificationKeyCache = null;
+  console.info("[artifacts] Cache cleared.");
+}
+
 // src/index.ts
 var FLUPPY_BROWSER_VERSION = "0.1.0";
 
 exports.FLUPPY_BROWSER_VERSION = FLUPPY_BROWSER_VERSION;
+exports.clearCircuitArtifactCache = clearCircuitArtifactCache;
 exports.computeCommitment = computeCommitment;
 exports.enrollCommitment = enrollCommitment;
+exports.getDefaultCircuitArtifactPaths = getDefaultCircuitArtifactPaths;
 exports.getMerkleProof = getMerkleProof;
+exports.loadCircuitArtifacts = loadCircuitArtifacts;
+exports.loadVerificationKey = loadVerificationKey;
+exports.validateCircuitArtifacts = validateCircuitArtifacts;
 Object.keys(core).forEach(function (k) {
   if (k !== 'default' && !Object.prototype.hasOwnProperty.call(exports, k)) Object.defineProperty(exports, k, {
     enumerable: true,

@@ -33,6 +33,38 @@ declare function enrollCommitment(secret: string, options?: MerkleClientOptions)
 declare function getMerkleProof(secret: string, options?: MerkleClientOptions): Promise<BrowserMerkleProof>;
 
 /**
+ * artifacts.ts — Circuit artifact loader for Fluppy browser SDK.
+ *
+ * Responsibilities:
+ * - Define default artifact paths
+ * - Fetch and cache WASM and ZKey as Uint8Array
+ * - Fetch and cache verification_key.json
+ * - Validate artifact availability
+ * - Expose cache reset for testing and development
+ *
+ * This module must not import React, Next.js, Sentry, or UI code.
+ */
+interface CircuitArtifactPaths {
+    readonly wasmPath: string;
+    readonly zkeyPath: string;
+    readonly verificationKeyPath: string;
+}
+interface CircuitArtifacts {
+    readonly wasm: Uint8Array;
+    readonly zkey: Uint8Array;
+}
+interface LoadArtifactOptions {
+    readonly paths?: Partial<CircuitArtifactPaths>;
+    readonly cache?: RequestCache;
+    readonly signal?: AbortSignal;
+}
+declare function getDefaultCircuitArtifactPaths(): CircuitArtifactPaths;
+declare function loadCircuitArtifacts(options?: LoadArtifactOptions): Promise<CircuitArtifacts>;
+declare function loadVerificationKey(options?: LoadArtifactOptions): Promise<unknown>;
+declare function validateCircuitArtifacts(options?: LoadArtifactOptions): Promise<void>;
+declare function clearCircuitArtifactCache(): void;
+
+/**
  * @fluppy/browser — Fluppy ZK Payment Protocol browser SDK.
  *
  * This package provides browser-side implementations for:
@@ -47,4 +79,4 @@ declare function getMerkleProof(secret: string, options?: MerkleClientOptions): 
 
 declare const FLUPPY_BROWSER_VERSION = "0.1.0";
 
-export { type BrowserMerkleProof, type EnrollCommitmentResult, FLUPPY_BROWSER_VERSION, type MerkleClientOptions, computeCommitment, enrollCommitment, getMerkleProof };
+export { type BrowserMerkleProof, type CircuitArtifactPaths, type CircuitArtifacts, type EnrollCommitmentResult, FLUPPY_BROWSER_VERSION, type LoadArtifactOptions, type MerkleClientOptions, clearCircuitArtifactCache, computeCommitment, enrollCommitment, getDefaultCircuitArtifactPaths, getMerkleProof, loadCircuitArtifacts, loadVerificationKey, validateCircuitArtifacts };
