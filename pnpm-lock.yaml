@@ -10,6 +10,9 @@ importers:
 
   app:
     dependencies:
+      '@fluppy/browser':
+        specifier: workspace:*
+        version: link:../packages/fluppy-browser
       '@fluppy/core':
         specifier: workspace:*
         version: link:../packages/fluppy-core

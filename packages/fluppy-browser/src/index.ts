@@ -13,4 +13,16 @@
 
 export * from '@fluppy/core';
 
+export {
+  computeCommitment,
+  enrollCommitment,
+  getMerkleProof,
+} from './merkle-client';
+
+export type {
+  BrowserMerkleProof,
+  EnrollCommitmentResult,
+  MerkleClientOptions,
+} from './merkle-client';
+
 export const FLUPPY_BROWSER_VERSION = '0.1.0';
